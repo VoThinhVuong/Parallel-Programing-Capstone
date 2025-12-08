@@ -20,8 +20,8 @@
 #define POOL1_STRIDE 2
 #define POOL1_OUTPUT_SIZE 16  // 32/2 = 16
 
-// Conv2 layer: 64 filters, 3x3 kernel, stride 1, padding 1
-#define CONV2_FILTERS 64
+// Conv2 layer: 128 filters, 3x3 kernel, stride 1, padding 1
+#define CONV2_FILTERS 128
 #define CONV2_KERNEL_SIZE 3
 #define CONV2_STRIDE 1
 #define CONV2_PADDING 1
@@ -33,7 +33,7 @@
 #define POOL2_OUTPUT_SIZE 8  // 16/2 = 8
 
 // Fully connected layers
-#define FC1_INPUT_SIZE (CONV2_FILTERS * POOL2_OUTPUT_SIZE * POOL2_OUTPUT_SIZE)  // 64*8*8 = 4096
+#define FC1_INPUT_SIZE (CONV2_FILTERS * POOL2_OUTPUT_SIZE * POOL2_OUTPUT_SIZE)  // 128*8*8 = 8192
 #define FC1_OUTPUT_SIZE 128
 #define FC2_INPUT_SIZE 128
 #define FC2_OUTPUT_SIZE 10  // Number of classes

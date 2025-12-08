@@ -15,10 +15,10 @@ Input: 32x32x3
 ├─ Conv1: 32 filters, 3x3 kernel, stride 1, padding 1 → 32x32x32
 ├─ ReLU
 ├─ MaxPool1: 2x2, stride 2 → 16x16x32
-├─ Conv2: 64 filters, 3x3 kernel, stride 1, padding 1 → 16x16x64
+├─ Conv2: 128 filters, 3x3 kernel, stride 1, padding 1 → 16x16x128
 ├─ ReLU
-├─ MaxPool2: 2x2, stride 2 → 8x8x64
-├─ FC1: 4096 → 128
+├─ MaxPool2: 2x2, stride 2 → 8x8x128
+├─ FC1: 8192 → 128
 ├─ ReLU
 ├─ FC2: 128 → 10
 └─ Softmax

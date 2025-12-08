@@ -19,16 +19,16 @@ Input: 32×32×3 RGB images
 ├─ Conv1: 32 filters, 3×3 kernel, stride 1, padding 1 → 32×32×32
 ├─ ReLU activation
 ├─ MaxPool1: 2×2, stride 2 → 16×16×32
-├─ Conv2: 64 filters, 3×3 kernel, stride 1, padding 1 → 16×16×64
+├─ Conv2: 128 filters, 3×3 kernel, stride 1, padding 1 → 16×16×128
 ├─ ReLU activation
-├─ MaxPool2: 2×2, stride 2 → 8×8×64
-├─ FC1: 4096 → 128 neurons
+├─ MaxPool2: 2×2, stride 2 → 8×8×128
+├─ FC1: 8192 → 128 neurons
 ├─ ReLU activation
 ├─ FC2: 128 → 10 classes
 └─ Softmax
 ```
 
-**Total Parameters**: ~530K trainable parameters
+**Total Parameters**: ~1.1M trainable parameters
 
 ## Dataset
 

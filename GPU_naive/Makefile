@@ -3,10 +3,12 @@
 # Detect OS
 ifeq ($(OS),Windows_NT)
     EXECUTABLE = cifar10_cnn_gpu.exe
+    FEATURE_EXTRACTOR = extract_features.exe
     RM = del /Q
     RMDIR = rmdir /S /Q
 else
     EXECUTABLE = cifar10_cnn_gpu
+    FEATURE_EXTRACTOR = extract_features
     RM = rm -f
     RMDIR = rm -rf
 endif
@@ -22,44 +24,61 @@ CUDA_LIBS = -lcudart
 CC = gcc
 CFLAGS = -O3 -Wall -std=c99
 
-# Source files
-CU_SOURCES = main.cu cnn.cu forward.cu backward.cu
-C_SOURCES = data_loader.c
+# Source files for main training
+CU_SOURCES = main.cu cnn.cu forward.cu backward.cu feature_extractor.cu
+C_SOURCES = data_loader.cu
 CU_OBJECTS = $(CU_SOURCES:.cu=.o)
-C_OBJECTS = $(C_SOURCES:.c=.o)
+C_OBJECTS = $(C_SOURCES:.cu=.o)
 ALL_OBJECTS = $(CU_OBJECTS) $(C_OBJECTS)
 
-# Default target
-all: $(EXECUTABLE)
+# Source files for feature extraction
+EXTRACT_CU_SOURCES = extract_features.cu cnn.cu forward.cu feature_extractor.cu
+EXTRACT_C_SOURCES = data_loader.cu
+EXTRACT_CU_OBJECTS = $(EXTRACT_CU_SOURCES:.cu=_extract.o)
+EXTRACT_C_OBJECTS = $(EXTRACT_C_SOURCES:.cu=_extract.o)
+EXTRACT_ALL_OBJECTS = $(EXTRACT_CU_OBJECTS) $(EXTRACT_C_OBJECTS)
 
-# Link
+# Default target
+all: $(EXECUTABLE) $(FEATURE_EXTRACTOR)
+
+# Link main training program
 $(EXECUTABLE): $(ALL_OBJECTS)
 	$(NVCC) $(NVCC_FLAGS) $(ALL_OBJECTS) -o $@ $(CUDA_LIBS)
 	@echo "Build complete: $(EXECUTABLE)"
 
-# Compile CUDA files
+# Link feature extraction program
+$(FEATURE_EXTRACTOR): $(EXTRACT_ALL_OBJECTS)
+	$(NVCC) $(NVCC_FLAGS) $(EXTRACT_ALL_OBJECTS) -o $@ $(CUDA_LIBS)
+	@echo "Build complete: $(FEATURE_EXTRACTOR)"
+
+# Compile CUDA files for main program
 %.o: %.cu
 	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
 
-# Compile C files
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Compile CUDA files for feature extractor (separate objects to avoid conflicts)
+%_extract.o: %.cu
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
 
 # Clean
 clean:
-	$(RM) $(ALL_OBJECTS) $(EXECUTABLE)
+	$(RM) $(ALL_OBJECTS) $(EXTRACT_ALL_OBJECTS) $(EXECUTABLE) $(FEATURE_EXTRACTOR)
 	@echo "Clean complete"
 
-# Run
+# Run main training
 run: $(EXECUTABLE)
 	./$(EXECUTABLE)
+
+# Run feature extraction
+extract: $(FEATURE_EXTRACTOR)
+	./$(FEATURE_EXTRACTOR)
 
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  all      - Build the executable (default)"
-	@echo "  clean    - Remove object files and executable"
-	@echo "  run      - Build and run the program"
+	@echo "  all      - Build both executables (default)"
+	@echo "  clean    - Remove object files and executables"
+	@echo "  run      - Build and run the training program"
+	@echo "  extract  - Build and run the feature extraction program"
 	@echo "  help     - Show this help message"
 
-.PHONY: all clean run help
+.PHONY: all clean run extract help

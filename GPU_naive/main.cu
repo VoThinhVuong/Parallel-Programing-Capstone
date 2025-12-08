@@ -2,6 +2,7 @@
 #include "cnn.cuh"
 #include "forward.cuh"
 #include "backward.cuh"
+#include "feature_extractor.cuh"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -289,6 +290,13 @@ int main(int argc, char** argv) {
     printf("=== Training Complete ===\n");
     printf("Total training time: %.2f seconds\n", total_training_time);
     printf("Average time per epoch: %.2f seconds\n", total_training_time / num_epochs);
+    
+    // Save encoder weights for feature extraction
+    printf("\nSaving encoder weights...\n");
+    if (save_encoder_weights(cnn, "encoder_weights.bin") == 0) {
+        printf("Encoder weights saved to 'encoder_weights.bin'\n");
+        printf("You can now run './extract_features' to extract features and train a classifier\n");
+    }
     
     // Cleanup
     free_cnn(cnn);
