@@ -1,3 +1,5 @@
 *.o
 *.exe
 *.bin
+thundersvm/
+__pycache__/
