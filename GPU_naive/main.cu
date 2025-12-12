@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
     // Configuration
     const char* data_dir = "../cifar-10-batches-bin";
     const int batch_size = 64;
-    const int num_epochs = 10;
+    const int num_epochs = 20;
     const float learning_rate = 0.001f;
     
     printf("=== CIFAR-10 CNN Training (GPU Naive Implementation) ===\n");
