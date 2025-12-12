@@ -1,4 +1,5 @@
 #include "feature_extractor.cuh"
+#include "cnn.cuh"
 #include "forward.cuh"
 #include "data_loader.h"
 #include <stdio.h>
@@ -117,21 +118,21 @@ int load_encoder_weights(CNN* cnn, const char* filename) {
 void encoder_forward_pass(CNN* cnn, float* d_input) {
     int batch_size = cnn->batch_size;
     
-    // Conv1 + ReLU
+    // Conv1 + ReLU (in-place)
     conv_forward(cnn->conv1, d_input, batch_size);
-    relu_forward(cnn->conv1->d_output, cnn->d_conv1_relu,
+    relu_forward(cnn->conv1->d_output,
                  batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE);
     
-    // Pool1
-    maxpool_forward(cnn->pool1, cnn->d_conv1_relu, batch_size);
+    // Pool1 (takes ReLU output from conv1->d_output)
+    maxpool_forward(cnn->pool1, cnn->conv1->d_output, batch_size);
     
-    // Conv2 + ReLU
+    // Conv2 + ReLU (in-place)
     conv_forward(cnn->conv2, cnn->pool1->d_output, batch_size);
-    relu_forward(cnn->conv2->d_output, cnn->d_conv2_relu,
+    relu_forward(cnn->conv2->d_output,
                  batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE);
     
-    // Pool2 (output is the feature representation)
-    maxpool_forward(cnn->pool2, cnn->d_conv2_relu, batch_size);
+    // Pool2 (takes ReLU output from conv2->d_output, output is the feature representation)
+    maxpool_forward(cnn->pool2, cnn->conv2->d_output, batch_size);
     
     // Features are now in cnn->pool2->d_output with size: batch_size x FEATURE_SIZE
 }
