@@ -351,7 +351,7 @@ int main(int argc, char** argv) {
     // Create and train classifier
     LogisticRegression* classifier = create_classifier(train_feature_size, FC2_OUTPUT_SIZE);
     train_classifier(classifier, train_features, train_labels, 
-                    train_num_samples, 20, 0.01f);
+                    train_num_samples, 20, 0.001f);
     
     // Evaluate
     printf("\n=== Evaluation ===\n");

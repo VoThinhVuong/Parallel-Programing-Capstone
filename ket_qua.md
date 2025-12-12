@@ -18,11 +18,11 @@ Average time per epoch: 265.99 seconds
 === CIFAR-10 CNN Training (GPU Naive Implementation) ===
 Batch size: 64
 Learning rate: 0.0010
-Number of epochs: 10
+Number of epochs: 20
 
-Using GPU: NVIDIA GeForce RTX 3050 Laptop GPU
-Compute Capability: 8.6
-Global Memory: 4.00 GB
+Using GPU: Tesla T4
+Compute Capability: 7.5
+Global Memory: 14.74 GB
 
 Loading training data...
 Loading ../cifar-10-batches-bin/data_batch_1.bin...
@@ -47,69 +47,129 @@ Model Architecture:
   FC1: 8192 -> 128
   FC2: 128 -> 10 (output)
 
-Epoch 1/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2880, Acc: 0.1085
-  Epoch completed in 121.74 seconds - Avg Loss: 2.2880, Avg Acc: 0.1085
+Epoch 1/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2904, Acc: 0.1254
+  Epoch completed in 109.49 seconds - Avg Loss: 2.2904, Avg Acc: 0.1254
 Evaluating on 10000 samples...
-Test Loss: 2.2774, Test Accuracy: 0.1243
+Test Loss: 2.2803, Test Accuracy: 0.1458
 
-Epoch 2/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2691, Acc: 0.1422
-  Epoch completed in 120.66 seconds - Avg Loss: 2.2691, Avg Acc: 0.1422
+Epoch 2/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2715, Acc: 0.1589
+  Epoch completed in 110.33 seconds - Avg Loss: 2.2715, Avg Acc: 0.1589
 Evaluating on 10000 samples...
-Test Loss: 2.2578, Test Accuracy: 0.1598
+Test Loss: 2.2607, Test Accuracy: 0.1824
 
-Epoch 3/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2487, Acc: 0.1677
-  Epoch completed in 120.79 seconds - Avg Loss: 2.2487, Avg Acc: 0.1677
+Epoch 3/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2497, Acc: 0.1937
+  Epoch completed in 110.91 seconds - Avg Loss: 2.2497, Avg Acc: 0.1937
 Evaluating on 10000 samples...
-Test Loss: 2.2352, Test Accuracy: 0.1867
+Test Loss: 2.2363, Test Accuracy: 0.1998
 
-Epoch 4/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2249, Acc: 0.1907
-  Epoch completed in 120.77 seconds - Avg Loss: 2.2249, Avg Acc: 0.1907
+Epoch 4/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.2224, Acc: 0.2144
+  Epoch completed in 110.96 seconds - Avg Loss: 2.2224, Avg Acc: 0.2144
 Evaluating on 10000 samples...
-Test Loss: 2.2088, Test Accuracy: 0.2057
+Test Loss: 2.2056, Test Accuracy: 0.2135
 
-Epoch 5/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1975, Acc: 0.2123
-  Epoch completed in 120.83 seconds - Avg Loss: 2.1975, Avg Acc: 0.2123
+Epoch 5/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1896, Acc: 0.2295
+  Epoch completed in 110.94 seconds - Avg Loss: 2.1896, Avg Acc: 0.2295
 Evaluating on 10000 samples...
-Test Loss: 2.1788, Test Accuracy: 0.2253
+Test Loss: 2.1703, Test Accuracy: 0.2239
 
-Epoch 6/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1671, Acc: 0.2344
-  Epoch completed in 120.62 seconds - Avg Loss: 2.1671, Avg Acc: 0.2344
+Epoch 6/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1537, Acc: 0.2435
+  Epoch completed in 110.95 seconds - Avg Loss: 2.1537, Avg Acc: 0.2435
 Evaluating on 10000 samples...
-Test Loss: 2.1462, Test Accuracy: 0.2433
+Test Loss: 2.1336, Test Accuracy: 0.2359
 
-Epoch 7/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1349, Acc: 0.2508
-  Epoch completed in 120.65 seconds - Avg Loss: 2.1349, Avg Acc: 0.2508
+Epoch 7/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1186, Acc: 0.2549
+  Epoch completed in 110.94 seconds - Avg Loss: 2.1186, Avg Acc: 0.2549
 Evaluating on 10000 samples...
-Test Loss: 2.1131, Test Accuracy: 0.2520
+Test Loss: 2.0996, Test Accuracy: 0.2479
 
-Epoch 8/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.1037, Acc: 0.2599
-  Epoch completed in 120.69 seconds - Avg Loss: 2.1037, Avg Acc: 0.2599
+Epoch 8/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0878, Acc: 0.2624
+  Epoch completed in 110.94 seconds - Avg Loss: 2.0878, Avg Acc: 0.2624
 Evaluating on 10000 samples...
-Test Loss: 2.0830, Test Accuracy: 0.2602
+Test Loss: 2.0718, Test Accuracy: 0.2557
 
-Epoch 9/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0767, Acc: 0.2658
-  Epoch completed in 120.82 seconds - Avg Loss: 2.0767, Avg Acc: 0.2658
+Epoch 9/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0638, Acc: 0.2675
+  Epoch completed in 110.92 seconds - Avg Loss: 2.0638, Avg Acc: 0.2675
 Evaluating on 10000 samples...
-Test Loss: 2.0590, Test Accuracy: 0.2649
+Test Loss: 2.0512, Test Accuracy: 0.2636
 
-Epoch 10/10:
-  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0558, Acc: 0.2710
-  Epoch completed in 120.76 seconds - Avg Loss: 2.0558, Avg Acc: 0.2710
+Epoch 10/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0455, Acc: 0.2730
+  Epoch completed in 110.91 seconds - Avg Loss: 2.0455, Avg Acc: 0.2730
 Evaluating on 10000 samples...
-Test Loss: 2.0414, Test Accuracy: 0.2709
+Test Loss: 2.0354, Test Accuracy: 0.2694
+
+Epoch 11/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0307, Acc: 0.2779
+  Epoch completed in 110.90 seconds - Avg Loss: 2.0307, Avg Acc: 0.2779
+Evaluating on 10000 samples...
+Test Loss: 2.0220, Test Accuracy: 0.2753
+
+Epoch 12/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0174, Acc: 0.2836
+  Epoch completed in 110.93 seconds - Avg Loss: 2.0174, Avg Acc: 0.2836
+Evaluating on 10000 samples...
+Test Loss: 2.0093, Test Accuracy: 0.2810
+
+Epoch 13/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 2.0044, Acc: 0.2888
+  Epoch completed in 110.93 seconds - Avg Loss: 2.0044, Avg Acc: 0.2888
+Evaluating on 10000 samples...
+Test Loss: 1.9968, Test Accuracy: 0.2859
+
+Epoch 14/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9914, Acc: 0.2941
+  Epoch completed in 110.92 seconds - Avg Loss: 1.9914, Avg Acc: 0.2941
+Evaluating on 10000 samples...
+Test Loss: 1.9843, Test Accuracy: 0.2917
+
+Epoch 15/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9783, Acc: 0.2983
+  Epoch completed in 110.99 seconds - Avg Loss: 1.9783, Avg Acc: 0.2983
+Evaluating on 10000 samples...
+Test Loss: 1.9716, Test Accuracy: 0.2975
+
+Epoch 16/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9649, Acc: 0.3034
+  Epoch completed in 110.95 seconds - Avg Loss: 1.9649, Avg Acc: 0.3034
+Evaluating on 10000 samples...
+Test Loss: 1.9588, Test Accuracy: 0.3009
+
+Epoch 17/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9512, Acc: 0.3085
+  Epoch completed in 110.96 seconds - Avg Loss: 1.9512, Avg Acc: 0.3085
+Evaluating on 10000 samples...
+Test Loss: 1.9456, Test Accuracy: 0.3050
+
+Epoch 18/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9373, Acc: 0.3126
+  Epoch completed in 110.94 seconds - Avg Loss: 1.9373, Avg Acc: 0.3126
+Evaluating on 10000 samples...
+Test Loss: 1.9321, Test Accuracy: 0.3103
+
+Epoch 19/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9232, Acc: 0.3182
+  Epoch completed in 110.92 seconds - Avg Loss: 1.9232, Avg Acc: 0.3182
+Evaluating on 10000 samples...
+Test Loss: 1.9182, Test Accuracy: 0.3153
+
+Epoch 20/20:
+  Progress: [========================================] 781/781 (100.0%) - Loss: 1.9091, Acc: 0.3234
+  Epoch completed in 110.92 seconds - Avg Loss: 1.9091, Avg Acc: 0.3234
+Evaluating on 10000 samples...
+Test Loss: 1.9044, Test Accuracy: 0.3205
 
 === Training Complete ===
-Total training time: 1208.32 seconds
-Average time per epoch: 120.83 seconds
+Total training time: 2216.64 seconds
+Average time per epoch: 110.83 seconds
 ```
 ***
 ## Extract and Test feature
@@ -137,28 +197,28 @@ Training classifier...
 Samples: 50000, Features: 8192, Classes: 10
 Epochs: 20, Learning rate: 0.0100
 
-Epoch 1/20 - Loss: 3.6125 - Time: 11.75s
-Epoch 2/20 - Loss: 3.4160 - Time: 11.14s
-Epoch 3/20 - Loss: 3.3302 - Time: 11.25s
-Epoch 4/20 - Loss: 3.2713 - Time: 11.39s
-Epoch 5/20 - Loss: 3.2254 - Time: 11.56s
-Epoch 6/20 - Loss: 3.1873 - Time: 11.34s
-Epoch 7/20 - Loss: 3.1556 - Time: 11.18s
-Epoch 8/20 - Loss: 3.1282 - Time: 11.19s
-Epoch 9/20 - Loss: 3.1044 - Time: 11.25s
-Epoch 10/20 - Loss: 3.0832 - Time: 11.16s
-Epoch 11/20 - Loss: 3.0640 - Time: 11.18s
-Epoch 12/20 - Loss: 3.0468 - Time: 11.48s
-Epoch 13/20 - Loss: 3.0312 - Time: 11.19s
-Epoch 14/20 - Loss: 3.0168 - Time: 11.18s
-Epoch 15/20 - Loss: 3.0034 - Time: 11.15s
-Epoch 16/20 - Loss: 2.9907 - Time: 11.17s
-Epoch 17/20 - Loss: 2.9791 - Time: 11.27s
-Epoch 18/20 - Loss: 2.9681 - Time: 11.28s
-Epoch 19/20 - Loss: 2.9578 - Time: 11.28s
-Epoch 20/20 - Loss: 2.9481 - Time: 11.23s
+Epoch 1/20 - Loss: 5.2913 - Time: 9.62s
+Epoch 2/20 - Loss: 5.0144 - Time: 9.73s
+Epoch 3/20 - Loss: 4.9034 - Time: 9.72s
+Epoch 4/20 - Loss: 4.8100 - Time: 9.26s
+Epoch 5/20 - Loss: 4.7521 - Time: 9.80s
+Epoch 6/20 - Loss: 4.7033 - Time: 9.63s
+Epoch 7/20 - Loss: 4.6474 - Time: 9.60s
+Epoch 8/20 - Loss: 4.6138 - Time: 9.15s
+Epoch 9/20 - Loss: 4.5843 - Time: 9.65s
+Epoch 10/20 - Loss: 4.5543 - Time: 9.58s
+Epoch 11/20 - Loss: 4.5262 - Time: 9.78s
+Epoch 12/20 - Loss: 4.5037 - Time: 9.63s
+Epoch 13/20 - Loss: 4.4832 - Time: 9.34s
+Epoch 14/20 - Loss: 4.4579 - Time: 9.73s
+Epoch 15/20 - Loss: 4.4379 - Time: 9.77s
+Epoch 16/20 - Loss: 4.4271 - Time: 9.65s
+Epoch 17/20 - Loss: 4.4035 - Time: 9.19s
+Epoch 18/20 - Loss: 4.3884 - Time: 9.65s
+Epoch 19/20 - Loss: 4.3676 - Time: 9.69s
+Epoch 20/20 - Loss: 4.3541 - Time: 9.64s
 
 === Evaluation ===
-Training Accuracy: 0.3670 (36.70%)
-Test Accuracy: 0.3591 (35.91%)
+Training Accuracy: 0.2672 (26.72%)
+Test Accuracy: 0.2624 (26.24%)
 ```
