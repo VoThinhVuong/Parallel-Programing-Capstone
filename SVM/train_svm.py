@@ -56,7 +56,7 @@ def load_features(features_path, labels_path):
     return features, labels
 
 
-def train_svm(train_features, train_labels, C=10.0, gamma='auto'):
+def train_svm(train_features, train_labels, C=10.0, gamma='auto', kernel='rbf'):
     """
     Train SVM with RBF kernel using ThunderSVM.
     
@@ -65,6 +65,7 @@ def train_svm(train_features, train_labels, C=10.0, gamma='auto'):
         train_labels: Training labels (N,)
         C: Regularization parameter (default: 10.0)
         gamma: Kernel coefficient (default: 'auto' = 1/n_features)
+        kernel: Kernel type ('rbf' or 'linear')
     
     Returns:
         Trained SVM model
@@ -73,19 +74,30 @@ def train_svm(train_features, train_labels, C=10.0, gamma='auto'):
     print("Training SVM with ThunderSVM")
     print("="*60)
     print(f"Hyperparameters:")
-    print(f"  Kernel: RBF")
+    print(f"  Kernel: {kernel.upper()}")
     print(f"  C: {C}")
-    print(f"  gamma: {gamma}")
+    if kernel == 'rbf':
+        print(f"  gamma: {gamma}")
     print(f"\nTraining data:")
     print(f"  Samples: {train_features.shape[0]}")
     print(f"  Features: {train_features.shape[1]}")
     print(f"  Classes: {len(np.unique(train_labels))}")
     
+    # Memory estimation for RBF kernel
+    if kernel == 'rbf':
+        n_samples = train_features.shape[0]
+        kernel_matrix_gb = (n_samples * n_samples * 4) / (1024**3)
+        print(f"\n⚠️  RBF kernel matrix size: ~{kernel_matrix_gb:.2f} GB")
+        if kernel_matrix_gb > 2:
+            print(f"   WARNING: Large memory usage! Consider:")
+            print(f"   - Using --subset <num> to train on fewer samples")
+            print(f"   - Using --kernel linear for lower memory")
+    
     # Create SVM classifier with ThunderSVM
     svm = SVC(
-        kernel='rbf',
+        kernel=kernel,
         C=C,
-        gamma=gamma,
+        gamma=gamma if kernel == 'rbf' else 'auto',
         verbose=True,
         random_state=42
     )
@@ -117,11 +129,21 @@ def save_model(model, model_path):
 def main():
     # Paths to feature files (from extracted_features folder)
     import sys
+    import argparse
     
-    # Default to 'naive' version, but allow specifying 'shared' or 'v3' via command line
-    gpu_version = 'naive'
-    if len(sys.argv) > 1 and sys.argv[1] in ['naive', 'shared', 'v3']:
-        gpu_version = sys.argv[1]
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train SVM on CNN features')
+    parser.add_argument('gpu_version', nargs='?', default='naive', choices=['naive', 'shared', 'v3'],
+                        help='GPU version to use (naive, shared, or v3)')
+    parser.add_argument('--subset', type=int, default=None,
+                        help='Train on subset of samples (e.g., 10000) to reduce memory usage')
+    parser.add_argument('--kernel', type=str, default='rbf', choices=['rbf', 'linear'],
+                        help='SVM kernel type (rbf=high accuracy/high memory, linear=lower memory)')
+    parser.add_argument('--C', type=float, default=10.0,
+                        help='SVM regularization parameter (default: 10.0)')
+    args = parser.parse_args()
+    
+    gpu_version = args.gpu_version
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(base_dir)
@@ -136,11 +158,22 @@ def main():
     
     train_features_path = os.path.join(features_dir, f'train_features{suffix}.bin')
     train_labels_path = os.path.join(features_dir, 'train_labels.bin')
-    model_output_path = os.path.join(base_dir, f'svm_model{suffix}.pkl')
+    
+    # Add subset/kernel info to model name if using non-default settings
+    model_name = f'svm_model{suffix}'
+    if args.subset:
+        model_name += f'_subset{args.subset}'
+    if args.kernel != 'rbf':
+        model_name += f'_{args.kernel}'
+    model_output_path = os.path.join(base_dir, f'{model_name}.pkl')
     
     print(f"Using GPU version: {gpu_version}")
+    if args.subset:
+        print(f"Training on subset: {args.subset} samples")
+    if args.kernel != 'rbf':
+        print(f"Using {args.kernel} kernel")
     print(f"Feature files will be read from: {features_dir}")
-    print(f"Model will be saved as: svm_model{suffix}.pkl\n")
+    print(f"Model will be saved as: {model_name}.pkl\n")
     
     # Check if files exist
     if not os.path.exists(train_features_path):
@@ -157,13 +190,29 @@ def main():
     # Load training data
     train_features, train_labels = load_features(train_features_path, train_labels_path)
     
+    # Use subset if specified (to reduce memory usage)
+    if args.subset and args.subset < len(train_features):
+        print(f"\n⚠️  Using subset: {args.subset} of {len(train_features)} samples")
+        # Randomly sample with fixed seed for reproducibility
+        np.random.seed(42)
+        indices = np.random.choice(len(train_features), args.subset, replace=False)
+        train_features = train_features[indices]
+        train_labels = train_labels[indices]
+        print(f"Subset shape: {train_features.shape}")
+    
     # Train SVM with specified hyperparameters
     svm_model = train_svm(
         train_features, 
         train_labels, 
-        C=10.0,          # Regularization parameter
-        gamma='auto'     # Kernel coefficient (auto = 1/n_features)
+        C=args.C,           # Regularization parameter
+        gamma='auto',       # Kernel coeffici{gpu_version} --model {model_name}.pkl to test the model")
+        kernel=args.kernel  # Kernel type
     )
+    
+    print(f"\nUsage tips:")
+    print(f"  - For lower memory: python train_svm.py {gpu_version} --subset 15000")
+    print(f"  - For fastest training: python train_svm.py {gpu_version} --kernel linear")
+    print(f"  - Combination: python train_svm.py {gpu_version} --subset 15000 --kernel lineareatures")
     
     # Save the trained model
     save_model(svm_model, model_output_path)
