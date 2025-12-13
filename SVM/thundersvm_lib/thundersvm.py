@@ -58,7 +58,7 @@ import glob
 SVM_TYPE = ['c_svc', 'nu_svc', 'one_class', 'epsilon_svr', 'nu_svr']
 KERNEL_TYPE = ['linear', 'polynomial', 'rbf', 'sigmoid', 'precomputed']
 
-# Add CUDA and other dependency directories to DLL search path (Windows)
+# Add CUDA and other dependency directories to DLL search path (Windows) or LD_LIBRARY_PATH (Linux)
 if platform == "win32" and sys.version_info >= (3, 8):
     # Add CUDA bin directory
     cuda_paths = glob.glob("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v*/bin")
@@ -72,6 +72,23 @@ if platform == "win32" and sys.version_info >= (3, 8):
     if path.exists(dll_dir):
         os.add_dll_directory(dll_dir)
         print(f"Added ThunderSVM DLL directory: {dll_dir}")
+elif platform == "linux" or platform == "linux2":
+    # Add CUDA lib directory to LD_LIBRARY_PATH for Linux
+    cuda_lib_paths = glob.glob("/usr/local/cuda*/lib64")
+    for cuda_lib_path in cuda_lib_paths:
+        if path.exists(cuda_lib_path):
+            current_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+            if cuda_lib_path not in current_ld_path:
+                os.environ["LD_LIBRARY_PATH"] = f"{cuda_lib_path}:{current_ld_path}" if current_ld_path else cuda_lib_path
+                print(f"Added CUDA library path: {cuda_lib_path}")
+    
+    # Add thundersvm lib directory itself
+    lib_dir = path.abspath("./")
+    if path.exists(lib_dir):
+        current_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+        if lib_dir not in current_ld_path:
+            os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{current_ld_path}" if current_ld_path else lib_dir
+            print(f"Added ThunderSVM library path: {lib_dir}")
 
 try:
     dll_path = path.abspath("./thundersvm.dll")
