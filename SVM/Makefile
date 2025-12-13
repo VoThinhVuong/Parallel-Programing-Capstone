@@ -6,6 +6,10 @@ ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
     SHARED_LIB := thundersvm.dll
     BUILD_LIB_PATH := thundersvm/build/bin/Debug/$(SHARED_LIB)
+    TRAIN_EXE := thundersvm-train.exe
+    PREDICT_EXE := thundersvm-predict.exe
+    BUILD_TRAIN_PATH := thundersvm/build/bin/Debug/$(TRAIN_EXE)
+    BUILD_PREDICT_PATH := thundersvm/build/bin/Debug/$(PREDICT_EXE)
     PYTHON := python
     RM := del /Q
     RMDIR := rmdir /S /Q
@@ -14,9 +18,17 @@ else
     ifeq ($(DETECTED_OS),Linux)
         SHARED_LIB := libthundersvm.so
         BUILD_LIB_PATH := thundersvm/build/lib/$(SHARED_LIB)
+        TRAIN_EXE := thundersvm-train
+        PREDICT_EXE := thundersvm-predict
+        BUILD_TRAIN_PATH := thundersvm/build/bin/$(TRAIN_EXE)
+        BUILD_PREDICT_PATH := thundersvm/build/bin/$(PREDICT_EXE)
     else ifeq ($(DETECTED_OS),Darwin)
         SHARED_LIB := libthundersvm.dylib
         BUILD_LIB_PATH := thundersvm/build/lib/$(SHARED_LIB)
+        TRAIN_EXE := thundersvm-train
+        PREDICT_EXE := thundersvm-predict
+        BUILD_TRAIN_PATH := thundersvm/build/bin/$(TRAIN_EXE)
+        BUILD_PREDICT_PATH := thundersvm/build/bin/$(PREDICT_EXE)
     endif
     PYTHON := python3
     RM := rm -f
@@ -65,23 +77,33 @@ build:
 	cd thundersvm && \
 	mkdir -p build && \
 	cd build && \
-	cmake -DUSE_CUDA=ON .. && \
-	cmake --build . --config Debug -j
+	cmake .. && \
+	make -j
 	@echo "✓ ThunderSVM built successfully"
 	@echo ""
 
-# Copy shared library to SVM folder
+# Copy shared library and executables to SVM folder
 copy:
 	@echo "===================================================================="
-	@echo "Step 3: Copying shared library..."
+	@echo "Step 3: Copying binaries..."
 	@echo "===================================================================="
 	@if [ -f "$(BUILD_LIB_PATH)" ]; then \
 		cp $(BUILD_LIB_PATH) $(SHARED_LIB); \
 		echo "✓ Copied $(BUILD_LIB_PATH) -> $(SHARED_LIB)"; \
 	else \
-		echo "✗ ERROR: Built library not found at $(BUILD_LIB_PATH)"; \
-		echo "  Build may have failed. Check error messages above."; \
-		exit 1; \
+		echo "⚠ Library not found at $(BUILD_LIB_PATH)"; \
+	fi
+	@if [ -f "$(BUILD_TRAIN_PATH)" ]; then \
+		cp $(BUILD_TRAIN_PATH) $(TRAIN_EXE); \
+		echo "✓ Copied $(BUILD_TRAIN_PATH) -> $(TRAIN_EXE)"; \
+	else \
+		echo "⚠ Training executable not found at $(BUILD_TRAIN_PATH)"; \
+	fi
+	@if [ -f "$(BUILD_PREDICT_PATH)" ]; then \
+		cp $(BUILD_PREDICT_PATH) $(PREDICT_EXE); \
+		echo "✓ Copied $(BUILD_PREDICT_PATH) -> $(PREDICT_EXE)"; \
+	else \
+		echo "⚠ Prediction executable not found at $(BUILD_PREDICT_PATH)"; \
 	fi
 	@echo ""
 
@@ -92,6 +114,8 @@ clean:
 		$(RMDIR) thundersvm/build; \
 	fi
 	@$(RM) $(SHARED_LIB) 2>/dev/null || true
+	@$(RM) $(TRAIN_EXE) 2>/dev/null || true
+	@$(RM) $(PREDICT_EXE) 2>/dev/null || true
 	@echo "✓ Clean complete"
 
 # Remove everything (including cloned repo)
