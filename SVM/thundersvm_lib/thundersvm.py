@@ -91,7 +91,10 @@ elif platform == "linux" or platform == "linux2":
             print(f"Added ThunderSVM library path: {lib_dir}")
 
 try:
-    dll_path = path.abspath("./thundersvm.dll")
+    if platform == "linux" or platform == "linux2":
+        dll_path = path.abspath("./libthundersvm.so")
+    elif platform == "win32":
+        dll_path = path.abspath("./thundersvm.dll")
     print(f"Attempting to load ThunderSVM DLL from: {dll_path}")
     print(f"DLL exists: {path.exists(dll_path)}")
     thundersvm = CDLL(dll_path)
