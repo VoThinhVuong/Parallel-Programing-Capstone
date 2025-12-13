@@ -186,26 +186,42 @@ def main():
     print("-"*70)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(base_dir)
-    gpu_dir = os.path.join(parent_dir, 'GPU_naive')
+    features_dir = os.path.join(parent_dir, 'extracted_features')
     
     files_ok = True
+    naive_ok = True
+    shared_ok = True
     
-    print("\nTraining data:")
-    if not check_feature_file(os.path.join(gpu_dir, 'train_features.bin'), 50000):
+    print("\nGPU Naive version:")
+    if not check_feature_file(os.path.join(features_dir, 'train_features_naive.bin'), 50000):
+        naive_ok = False
+    if not check_feature_file(os.path.join(features_dir, 'test_features_naive.bin'), 10000):
+        naive_ok = False
+    
+    print("\nGPU Shared Memory version:")
+    if not check_feature_file(os.path.join(features_dir, 'train_features_shared.bin'), 50000):
+        shared_ok = False
+    if not check_feature_file(os.path.join(features_dir, 'test_features_shared.bin'), 10000):
+        shared_ok = False
+    
+    print("\nLabels (shared by both versions):")
+    if not check_feature_file(os.path.join(features_dir, 'train_labels.bin'), 50000):
         files_ok = False
-    if not check_feature_file(os.path.join(gpu_dir, 'train_labels.bin'), 50000):
+    if not check_feature_file(os.path.join(features_dir, 'test_labels.bin'), 10000):
         files_ok = False
     
-    print("\nTest data:")
-    if not check_feature_file(os.path.join(gpu_dir, 'test_features.bin'), 10000):
-        files_ok = False
-    if not check_feature_file(os.path.join(gpu_dir, 'test_labels.bin'), 10000):
-        files_ok = False
+    files_ok = files_ok and (naive_ok or shared_ok)
     
-    if not files_ok:
-        print("\n⚠ Feature files missing or invalid!")
-        print("  Run feature extraction in GPU_naive folder first:")
+    if not naive_ok:
+        print("\n⚠ GPU_naive feature files missing or invalid!")
+        print("  Run feature extraction in GPU_naive folder:")
         print("    cd ../GPU_naive")
+        print("    make extract")
+    
+    if not shared_ok:
+        print("\n⚠ GPU_v2_shared_mem feature files missing or invalid!")
+        print("  Run feature extraction in GPU_v2_shared_mem folder:")
+        print("    cd ../GPU_v2_shared_mem")
         print("    make extract")
     
     # Summary
@@ -214,9 +230,14 @@ def main():
         print(" ✓ ALL CHECKS PASSED - Ready to run SVM training!")
         print("="*70)
         print("\nNext steps:")
-        print("  1. Train SVM:     python train_svm.py")
-        print("  2. Evaluate:      python evaluate_svm.py")
-        print("  3. Or run both:   python run_pipeline.py")
+        if naive_ok:
+            print("  GPU_naive version:")
+            print("    1. Train SVM:     python train_svm.py naive")
+            print("    2. Evaluate:      python evaluate_svm.py naive")
+        if shared_ok:
+            print("  GPU_v2_shared_mem version:")
+            print("    1. Train SVM:     python train_svm.py shared")
+            print("    2. Evaluate:      python evaluate_svm.py shared")
     else:
         print(" ✗ CHECKS FAILED - Please fix the issues above")
         print("="*70)

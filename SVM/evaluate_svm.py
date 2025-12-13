@@ -209,25 +209,46 @@ def save_results(accuracy, conf_matrix, predictions, output_path):
 
 def main():
     # Paths to files
+    import sys
+    
+    # Default to 'naive' version, but allow specifying 'shared' or 'v3' via command line
+    gpu_version = 'naive'
+    if len(sys.argv) > 1 and sys.argv[1] in ['naive', 'shared', 'v3']:
+        gpu_version = sys.argv[1]
+    
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(base_dir)
-    gpu_naive_dir = os.path.join(parent_dir, 'GPU_naive')
+    features_dir = os.path.join(parent_dir, 'extracted_features')
     
-    test_features_path = os.path.join(gpu_naive_dir, 'test_features.bin')
-    test_labels_path = os.path.join(gpu_naive_dir, 'test_labels.bin')
-    model_path = os.path.join(base_dir, 'svm_model.pkl')
-    results_path = os.path.join(base_dir, 'evaluation_results.txt')
-    confusion_matrix_path = os.path.join(base_dir, 'confusion_matrix.png')
+    if gpu_version == 'naive':
+        suffix = '_naive'
+    elif gpu_version == 'shared':
+        suffix = '_shared'
+    else:  # v3
+        suffix = '_v3'
+    
+    test_features_path = os.path.join(features_dir, f'test_features{suffix}.bin')
+    test_labels_path = os.path.join(features_dir, 'test_labels.bin')
+    model_path = os.path.join(base_dir, f'svm_model{suffix}.pkl')
+    results_path = os.path.join(base_dir, f'evaluation_results{suffix}.txt')
+    confusion_matrix_path = os.path.join(base_dir, f'confusion_matrix{suffix}.png')
+    
+    print(f"Using GPU version: {gpu_version}")
+    print(f"Feature files will be read from: {features_dir}")
+    print(f"Model file: svm_model{suffix}.pkl\n")
     
     # Check if files exist
     if not os.path.exists(model_path):
         print(f"ERROR: Model not found at {model_path}")
-        print("Please run train_svm.py first to train the model.")
+        print(f"Please run train_svm.py {gpu_version} first to train the model.")
+        print(f"Usage: python evaluate_svm.py [naive|shared|v3]")
         return
     
     if not os.path.exists(test_features_path):
         print(f"ERROR: Test features not found at {test_features_path}")
-        print("Please run the feature extraction in GPU_naive folder first.")
+        folder_map = {'naive': 'GPU_naive', 'shared': 'GPU_v2_shared_mem', 'v3': 'GPU_v3_optimized_gradient'}
+        print(f"Please run the feature extraction in {folder_map.get(gpu_version, 'GPU')} folder first.")
+        print(f"Usage: python evaluate_svm.py [naive|shared|v3]")
         return
     
     if not os.path.exists(test_labels_path):

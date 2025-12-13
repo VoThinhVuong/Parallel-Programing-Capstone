@@ -174,8 +174,8 @@ void train_classifier(LogisticRegression* clf, float* features, uint8_t* labels,
 int main(int argc, char** argv) {
     const char* data_dir = "../cifar-10-batches-bin";
     const char* encoder_weights_file = "encoder_weights.bin";
-    const char* train_features_file = "train_features.bin";
-    const char* test_features_file = "test_features.bin";
+    const char* train_features_file = "../extracted_features/train_features_naive.bin";
+    const char* test_features_file = "../extracted_features/test_features_naive.bin";
     const int batch_size = 64;
     
     printf("=== CIFAR-10 Feature Extraction & Classification ===\n\n");
@@ -277,14 +277,14 @@ int main(int argc, char** argv) {
         
         // Save labels too
         if (extract_train) {
-            FILE* f = fopen("train_labels.bin", "wb");
+            FILE* f = fopen("../extracted_features/train_labels.bin", "wb");
             fwrite(&train_data->num_samples, sizeof(int), 1, f);
             fwrite(train_data->labels, sizeof(uint8_t), train_data->num_samples, f);
             fclose(f);
         }
         
         if (extract_test) {
-            FILE* f = fopen("test_labels.bin", "wb");
+            FILE* f = fopen("../extracted_features/test_labels.bin", "wb");
             fwrite(&test_data->num_samples, sizeof(int), 1, f);
             fwrite(test_data->labels, sizeof(uint8_t), test_data->num_samples, f);
             fclose(f);
@@ -317,7 +317,7 @@ int main(int argc, char** argv) {
     uint8_t* train_labels = NULL;
     uint8_t* test_labels = NULL;
     
-    FILE* f = fopen("train_labels.bin", "rb");
+    FILE* f = fopen("../extracted_features/train_labels.bin", "rb");
     if (f) {
         int n;
         fread(&n, sizeof(int), 1, f);
@@ -326,7 +326,7 @@ int main(int argc, char** argv) {
         fclose(f);
     }
     
-    f = fopen("test_labels.bin", "rb");
+    f = fopen("../extracted_features/test_labels.bin", "rb");
     if (f) {
         int n;
         fread(&n, sizeof(int), 1, f);

@@ -115,19 +115,39 @@ def save_model(model, model_path):
 
 
 def main():
-    # Paths to feature files (from GPU_naive folder)
+    # Paths to feature files (from extracted_features folder)
+    import sys
+    
+    # Default to 'naive' version, but allow specifying 'shared' or 'v3' via command line
+    gpu_version = 'naive'
+    if len(sys.argv) > 1 and sys.argv[1] in ['naive', 'shared', 'v3']:
+        gpu_version = sys.argv[1]
+    
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(base_dir)
-    gpu_naive_dir = os.path.join(parent_dir, 'GPU_naive')
+    features_dir = os.path.join(parent_dir, 'extracted_features')
     
-    train_features_path = os.path.join(gpu_naive_dir, 'train_features.bin')
-    train_labels_path = os.path.join(gpu_naive_dir, 'train_labels.bin')
-    model_output_path = os.path.join(base_dir, 'svm_model.pkl')
+    if gpu_version == 'naive':
+        suffix = '_naive'
+    elif gpu_version == 'shared':
+        suffix = '_shared'
+    else:  # v3
+        suffix = '_v3'
+    
+    train_features_path = os.path.join(features_dir, f'train_features{suffix}.bin')
+    train_labels_path = os.path.join(features_dir, 'train_labels.bin')
+    model_output_path = os.path.join(base_dir, f'svm_model{suffix}.pkl')
+    
+    print(f"Using GPU version: {gpu_version}")
+    print(f"Feature files will be read from: {features_dir}")
+    print(f"Model will be saved as: svm_model{suffix}.pkl\n")
     
     # Check if files exist
     if not os.path.exists(train_features_path):
         print(f"ERROR: Training features not found at {train_features_path}")
-        print("Please run the feature extraction in GPU_naive folder first.")
+        folder_map = {'naive': 'GPU_naive', 'shared': 'GPU_v2_shared_mem', 'v3': 'GPU_v3_optimized_gradient'}
+        print(f"Please run the feature extraction in {folder_map.get(gpu_version, 'GPU')} folder first.")
+        print(f"Usage: python train_svm.py [naive|shared|v3]")
         return
     
     if not os.path.exists(train_labels_path):
