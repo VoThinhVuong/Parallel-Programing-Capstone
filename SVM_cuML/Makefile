@@ -50,3 +50,78 @@ verify:
 clean-pip:
 	@echo "Uninstalling RAPIDS packages..."
 	pip uninstall -y cudf-cu12 dask-cudf-cu12 cuml-cu12 cugraph-cu12 nx-cugraph-cu12 cuxfilter-cu12 cucim-cu12 pylibraft-cu12 raft-dask-cu12 cuvs-cu12
+
+#===============================================================
+# cuML SVM Training and Evaluation
+#===============================================================
+
+install-deps:
+	@echo "Installing additional Python dependencies..."
+	pip install -r requirements.txt
+	@echo "Dependencies installed."
+
+# Train SVM with cuML (default parameters)
+train:
+	@echo "Training SVM with cuML (GPU-accelerated)..."
+	python train_svm_cuml.py
+
+# Train with custom parameters
+train-custom:
+	@echo "Training SVM with custom parameters..."
+	python train_svm_cuml.py --C 10.0 --gamma auto --kernel rbf
+
+# Train on subset for quick testing
+train-test:
+	@echo "Training SVM on subset (1000 samples) for testing..."
+	python train_svm_cuml.py --subset 1000
+
+# Evaluate SVM on test data
+evaluate:
+	@echo "Evaluating SVM on test data..."
+	python evaluate_svm_cuml.py
+
+# Evaluate on subset for quick testing
+evaluate-test:
+	@echo "Evaluating SVM on subset (500 samples) for testing..."
+	python evaluate_svm_cuml.py --subset 500
+
+# Full pipeline: train and evaluate
+pipeline:
+	@echo "Running full SVM pipeline (train + evaluate)..."
+	$(MAKE) train
+	$(MAKE) evaluate
+	@echo "Pipeline complete!"
+
+# Quick test pipeline with subsets
+test-pipeline:
+	@echo "Running quick test pipeline..."
+	$(MAKE) train-test
+	$(MAKE) evaluate-test
+	@echo "Test pipeline complete!"
+
+# Clean generated files
+clean:
+	@echo "Cleaning generated files..."
+	rm -f *.pkl *.png *.txt
+	@echo "Cleanup complete."
+
+# Show help for SVM commands
+help-svm:
+	@echo "================= cuML SVM Commands ================="
+	@echo "Training:"
+	@echo "  make train            : Train SVM with default parameters (C=10, gamma=auto, RBF kernel)"
+	@echo "  make train-custom     : Train with custom parameters"
+	@echo "  make train-test       : Quick training on 1000 samples"
+	@echo ""
+	@echo "Evaluation:"
+	@echo "  make evaluate         : Evaluate trained model on test data"
+	@echo "  make evaluate-test    : Quick evaluation on 500 samples"
+	@echo ""
+	@echo "Pipeline:"
+	@echo "  make pipeline         : Full train + evaluate pipeline"
+	@echo "  make test-pipeline    : Quick test pipeline with subsets"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make clean            : Remove generated files (models, plots, results)"
+	@echo "  make install-deps     : Install additional Python dependencies"
+	@echo "===================================================="
