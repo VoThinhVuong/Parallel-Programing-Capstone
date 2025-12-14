@@ -561,3 +561,87 @@ Epoch 20/20 - Loss: 1.7183 - Time: 9.12s
 Training Accuracy: 0.3422 (34.22%)
 Test Accuracy: 0.3367 (33.67%)
 ```
+***
+## SVM using cuML
+
+* Evaluation
+```bash
+============================================================
+SVM Evaluation with cuML (GPU-accelerated)
+============================================================
+Configuration:
+  Test features: ../extracted_features/test_features_v3.bin
+  Test labels: ../extracted_features/test_labels.bin
+  Model: ./models/svm_model.pkl
+
+Loading features from ../extracted_features/test_features_v3.bin...
+  Number of samples: 10000
+  Feature dimension: 8192
+Loading labels from ../extracted_features/test_labels.bin...
+  Number of labels: 10000
+Loaded features shape: (10000, 8192)
+Loaded labels shape: (10000,)
+Loading cuML model from ./models/svm_model.pkl...
+✓ Model loaded successfully!
+
+============================================================
+Evaluating SVM on Test Data (GPU-accelerated)
+============================================================
+Test samples: 10000
+Test features: 8192
+
+Transferring test data to GPU...
+Data transfer to GPU: 7.75 seconds
+
+Predicting on GPU...
+✓ Prediction completed in 17.67 seconds
+  Average time per sample: 1.77 ms
+
+============================================================
+Evaluation Results
+============================================================
+Test Accuracy: 40.91%
+
+Per-Class Accuracy:
+  airplane     (Class 0): 52.90%
+  automobile   (Class 1): 43.00%
+  bird         (Class 2): 29.10%
+  cat          (Class 3): 21.40%
+  deer         (Class 4): 27.50%
+  dog          (Class 5): 27.80%
+  frog         (Class 6): 52.40%
+  horse        (Class 7): 52.60%
+  ship         (Class 8): 56.80%
+  truck        (Class 9): 45.60%
+
+Detailed Classification Report:
+              precision    recall  f1-score   support
+
+    airplane     0.4401    0.5290    0.4805      1000
+  automobile     0.5599    0.4300    0.4864      1000
+        bird     0.2881    0.2910    0.2896      1000
+         cat     0.3204    0.2140    0.2566      1000
+        deer     0.3895    0.2750    0.3224      1000
+         dog     0.3484    0.2780    0.3092      1000
+        frog     0.3850    0.5240    0.4439      1000
+       horse     0.3823    0.5260    0.4428      1000
+        ship     0.5040    0.5680    0.5341      1000
+       truck     0.4634    0.4560    0.4597      1000
+
+    accuracy                         0.4091     10000
+   macro avg     0.4081    0.4091    0.4025     10000
+weighted avg     0.4081    0.4091    0.4025     10000
+
+
+Confusion Matrix (10x10):
+[[529  18  63  22  22  24  35  40 192  55]
+ [ 87 430  17  33  24  21  43  36  79 230]
+ [115  18 291  47 103  79 159 136  35  17]
+ [ 64  31 121 214  57 173 148 110  41  41]
+ [ 34  11 130  44 275  66 206 201  22  11]
+ [ 39  17 138 151  41 278 124 162  31  19]
+ [ 29  21 119  77  73  52 524  65  14  26]
+ [ 45  21  76  43  84  66  59 526  23  57]
+ [164  52  30  19  15  14  37  29 568  72]
+ [ 96 149  25  18  12  25  26  71 122 456]]
+```

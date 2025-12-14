@@ -235,15 +235,15 @@ def main():
                         default='../extracted_features/test_labels.bin',
                         help='Path to test labels binary file')
     parser.add_argument('--model', type=str,
-                        default='svm_model_cuml.pkl',
+                        default='./models/svm_model.pkl',
                         help='Path to trained cuML SVM model')
     
     # Output paths
     parser.add_argument('--output-matrix', type=str,
-                        default='confusion_matrix_cuml.png',
+                        default='./models/confusion_matrix_cuml.png',
                         help='Path to save confusion matrix plot')
     parser.add_argument('--output-results', type=str,
-                        default='evaluation_results_cuml.txt',
+                        default='./models/evaluation_results_cuml.txt',
                         help='Path to save evaluation results')
     
     # Optional subset for testing
@@ -289,7 +289,7 @@ def main():
         print_evaluation_results(test_labels, predictions, accuracy, conf_matrix)
         
         # Compare with baselines
-        compare_with_baseline(accuracy)
+        # compare_with_baseline(accuracy)
         
         # Plot confusion matrix
         if not args.no_plot:

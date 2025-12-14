@@ -164,7 +164,7 @@ def main():
     
     # Output path
     parser.add_argument('--output', type=str,
-                        default='svm_model_cuml.pkl',
+                        default='./models/svm_model.pkl',
                         help='Path to save trained model')
     
     # Hyperparameters
