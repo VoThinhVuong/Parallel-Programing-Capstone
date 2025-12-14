@@ -1,62 +1,52 @@
-# Makefile for Automating cuML Installation
+# Makefile for Automating RAPIDS (cuML, cuDF, etc.) Installation
 # USAGE:
-#   make install-conda  -> Installs via Conda (Best for stability)
-#   make install-pip    -> Installs via Pip (Best for existing envs)
+#   make install-pip    -> Installs full RAPIDS suite via Pip
 #   make verify         -> Checks if installation was successful
-#   make clean          -> Removes the conda environment
+#   make clean-pip      -> Uninstalls the packages (use with caution)
 
 # Configuration
-ENV_NAME = cuml_env
-PYTHON_VER = 3.10
-CUDA_VER = 12
-RAPIDS_VER = 24.12
+# Note: RAPIDS 25.12 requires Python 3.10, 3.11, or 3.12
+NV_INDEX_URL = https://pypi.nvidia.com
+PIP_PACKAGES = "cudf-cu12==25.12.*" \
+               "dask-cudf-cu12==25.12.*" \
+               "cuml-cu12==25.12.*" \
+               "cugraph-cu12==25.12.*" \
+               "nx-cugraph-cu12==25.12.*" \
+               "cuxfilter-cu12==25.12.*" \
+               "cucim-cu12==25.12.*" \
+               "pylibraft-cu12==25.12.*" \
+               "raft-dask-cu12==25.12.*" \
+               "cuvs-cu12==25.12.*"
 
-# Detected Shell (needed for conda activation)
-SHELL := /bin/bash
-CONDA_ACTIVATE = source $$(conda info --base)/etc/profile.d/conda.sh ; conda activate ; conda activate
-
-.PHONY: help install-conda install-pip verify clean check-gpu
+.PHONY: help install-pip verify clean-pip check-gpu
 
 help:
-	@echo "================= cuML Installer ================="
+	@echo "================= RAPIDS Installer ================="
 	@echo "Available commands:"
-	@echo "  make install-conda   : Create a new Conda env and install cuML (Recommended)"
-	@echo "  make install-pip     : Install cuML via Pip into current active environment"
+	@echo "  make install-pip     : Install full RAPIDS suite (25.12) via Pip"
 	@echo "  make verify          : Run a quick python script to verify installation"
-	@echo "  make clean           : Remove the '$(ENV_NAME)' conda environment"
-	@echo "=================================================="
+	@echo "===================================================="
 
 check-gpu:
 	@echo "Checking for NVIDIA GPU..."
 	@nvidia-smi || (echo "Error: NVIDIA GPU not found or drivers missing."; exit 1)
 	@echo "GPU Check passed."
 
-install-conda: check-gpu
-	@echo "Creating Conda environment '$(ENV_NAME)'..."
-	conda create -n $(ENV_NAME) -c rapidsai -c conda-forge -c nvidia \
-		cuml=$(RAPIDS_VER) \
-		python=$(PYTHON_VER) \
-		cuda-version=$(CUDA_VER) \
-		-y
-	@echo "--------------------------------------------------"
-	@echo "Installation Complete!"
-	@echo "To activate your environment, run:"
-	@echo "  conda activate $(ENV_NAME)"
-	@echo "Then run 'make verify'"
-
 install-pip: check-gpu
-	@echo "Installing via PIP (Experimental)..."
-	@echo "Ensure you are in a virtual environment before proceeding."
+	@echo "Installing RAPIDS 25.12 suite via PIP..."
+	@echo "Ensure you are in a virtual environment (venv/conda) before proceeding."
 	pip install \
-		--extra-index-url=https://pypi.nvidia.com \
-		cuml-cu$(CUDA_VER)==$(RAPIDS_VER)
+		--extra-index-url=$(NV_INDEX_URL) \
+		$(PIP_PACKAGES)
+	@echo "--------------------------------------------------"
 	@echo "Installation Complete."
 
 verify:
 	@echo "Running verification script..."
-	@python -c "import cuml; import cuml.genomics; print(f'Success! Installed cuML version: {cuml.__version__}')" || \
-	(echo "Verification FAILED. Did you activate the environment?"; exit 1)
+	@# We set the env var inline here to prevent the pynvjitlink error
+	@export NUMBA_CUDA_ENABLE_PYNVJITLINK=1 && python -c "import cuml; import cudf; print(f'Success! Installed cuML: {cuml.__version__} | cuDF: {cudf.__version__}')" || \
+	(echo "Verification FAILED."; exit 1)
 
-clean:
-	@echo "Removing Conda environment '$(ENV_NAME)'..."
-	conda env remove -n $(ENV_NAME)
+clean-pip:
+	@echo "Uninstalling RAPIDS packages..."
+	pip uninstall -y cudf-cu12 dask-cudf-cu12 cuml-cu12 cugraph-cu12 nx-cugraph-cu12 cuxfilter-cu12 cucim-cu12 pylibraft-cu12 raft-dask-cu12 cuvs-cu12
