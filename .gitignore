@@ -20,3 +20,36 @@ SVM/*.model
 
 # Extracted features
 extracted_features/*.bin
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# cuML build artifacts
+SVM_cuML/cuml/
+SVM_cuML/install/
+SVM_cuML/venv/
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
