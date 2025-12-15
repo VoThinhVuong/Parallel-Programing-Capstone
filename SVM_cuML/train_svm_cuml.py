@@ -130,7 +130,7 @@ def train_svm_cuml(train_features, train_labels, C=10.0, gamma='auto', kernel='r
     
     # Model statistics
     print(f"\nModel statistics:")
-    print(f"  Support vectors: {svm.n_support_}")
+    print(f"  Support vectors: {svm.support_}")
     print(f"  Number of classes: {len(svm.classes_)}")
     print(f"  Classes: {svm.classes_}")
     
