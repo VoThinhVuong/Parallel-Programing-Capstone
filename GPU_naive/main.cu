@@ -199,8 +199,18 @@ int main(int argc, char** argv) {
     // Configuration
     const char* data_dir = "../cifar-10-batches-bin";
     const int batch_size = 64;
-    const int num_epochs = 20;
+    int num_epochs = 20;  // Default value
     const float learning_rate = 0.01f;
+    
+    // Parse command-line arguments
+    if (argc > 1) {
+        num_epochs = atoi(argv[1]);
+        if (num_epochs <= 0) {
+            fprintf(stderr, "Invalid number of epochs: %s\n", argv[1]);
+            fprintf(stderr, "Usage: %s [num_epochs]\n", argv[0]);
+            return 1;
+        }
+    }
     
     printf("=== CIFAR-10 CNN Training (GPU Naive Implementation) ===\n");
     printf("Batch size: %d\n", batch_size);

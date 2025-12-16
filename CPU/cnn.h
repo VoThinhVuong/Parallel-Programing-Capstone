@@ -86,15 +86,65 @@ typedef struct {
     float* input_gradients;
 } FCLayer;
 
+// Transpose convolution (deconvolution) layer for decoder
+typedef struct {
+    int input_channels;
+    int output_channels;
+    int kernel_size;
+    int stride;
+    int padding;
+    int input_size;
+    int output_size;
+    
+    float* weights;  // output_channels x input_channels x kernel_size x kernel_size
+    float* bias;     // output_channels
+    float* output;   // batch_size x output_channels x output_size x output_size
+    
+    // For backpropagation
+    float* weight_gradients;
+    float* bias_gradients;
+    float* input_gradients;
+} TransposeConvLayer;
+
+// Upsampling layer (nearest neighbor)
+typedef struct {
+    int channels;
+    int input_size;
+    int output_size;
+    int scale_factor;
+    
+    float* output;   // batch_size x channels x output_size x output_size
+    float* input_gradients;
+} UpsampleLayer;
+
+// Decoder network
+typedef struct {
+    UpsampleLayer* upsample1;      // 8×8 → 16×16
+    TransposeConvLayer* tconv1;    // 128ch → 64ch
+    UpsampleLayer* upsample2;      // 16×16 → 32×32
+    TransposeConvLayer* tconv2;    // 64ch → 3ch
+    
+    float* tconv1_relu;            // After ReLU
+    float* tconv1_relu_grad;       // Gradient
+    float* reconstructed;          // Final 32×32×3 output
+    
+    int batch_size;
+} Decoder;
+
 // Complete CNN model
 typedef struct {
-    // Layers
+    // Encoder layers
     ConvLayer* conv1;
     MaxPoolLayer* pool1;
     ConvLayer* conv2;
     MaxPoolLayer* pool2;
+    
+    // Classifier layers
     FCLayer* fc1;
     FCLayer* fc2;
+    
+    // Decoder (optional, for reconstruction)
+    Decoder* decoder;
     
     // Intermediate activations
     float* conv1_relu;  // After ReLU
@@ -120,11 +170,23 @@ MaxPoolLayer* create_maxpool_layer(int pool_size, int stride,
                                    int input_channels, int input_size, 
                                    int batch_size);
 FCLayer* create_fc_layer(int input_size, int output_size, int batch_size);
+TransposeConvLayer* create_transpose_conv_layer(int input_channels, int output_channels,
+                                                int kernel_size, int stride, int padding,
+                                                int input_size, int batch_size);
+UpsampleLayer* create_upsample_layer(int channels, int input_size, 
+                                     int scale_factor, int batch_size);
 
 // Layer cleanup functions
 void free_conv_layer(ConvLayer* layer);
 void free_maxpool_layer(MaxPoolLayer* layer);
 void free_fc_layer(FCLayer* layer);
+void free_transpose_conv_layer(TransposeConvLayer* layer);
+void free_upsample_layer(UpsampleLayer* layer);
+
+// Decoder creation and cleanup
+Decoder* create_decoder(int batch_size);
+void free_decoder(Decoder* decoder);
+void initialize_decoder_weights(Decoder* decoder);
 
 // CNN creation and cleanup
 CNN* create_cnn(int batch_size);

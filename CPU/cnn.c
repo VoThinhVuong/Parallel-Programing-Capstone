@@ -164,6 +164,9 @@ CNN* create_cnn(int batch_size) {
     cnn->conv2_relu_grad = (float*)malloc(batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE * sizeof(float));
     cnn->fc1_relu_grad = (float*)malloc(batch_size * FC1_OUTPUT_SIZE * sizeof(float));
     
+    // Decoder is optional, created only when needed
+    cnn->decoder = NULL;
+    
     // Check if all allocations succeeded
     if (!cnn->conv1 || !cnn->pool1 || !cnn->conv2 || !cnn->pool2 || 
         !cnn->fc1 || !cnn->fc2 || !cnn->conv1_relu || !cnn->conv2_relu || 
@@ -187,6 +190,8 @@ void free_cnn(CNN* cnn) {
     free_fc_layer(cnn->fc1);
     free_fc_layer(cnn->fc2);
     
+    if (cnn->decoder) free_decoder(cnn->decoder);
+    
     if (cnn->conv1_relu) free(cnn->conv1_relu);
     if (cnn->conv2_relu) free(cnn->conv2_relu);
     if (cnn->fc1_relu) free(cnn->fc1_relu);
@@ -196,6 +201,153 @@ void free_cnn(CNN* cnn) {
     if (cnn->fc1_relu_grad) free(cnn->fc1_relu_grad);
     
     free(cnn);
+}
+
+// Create transpose convolution layer
+TransposeConvLayer* create_transpose_conv_layer(int input_channels, int output_channels,
+                                                int kernel_size, int stride, int padding,
+                                                int input_size, int batch_size) {
+    TransposeConvLayer* layer = (TransposeConvLayer*)malloc(sizeof(TransposeConvLayer));
+    if (!layer) return NULL;
+    
+    layer->input_channels = input_channels;
+    layer->output_channels = output_channels;
+    layer->kernel_size = kernel_size;
+    layer->stride = stride;
+    layer->padding = padding;
+    layer->input_size = input_size;
+    layer->output_size = (input_size - 1) * stride - 2 * padding + kernel_size;
+    
+    int weight_size = output_channels * input_channels * kernel_size * kernel_size;
+    int output_total_size = batch_size * output_channels * layer->output_size * layer->output_size;
+    
+    layer->weights = (float*)malloc(weight_size * sizeof(float));
+    layer->bias = (float*)malloc(output_channels * sizeof(float));
+    layer->output = (float*)malloc(output_total_size * sizeof(float));
+    layer->weight_gradients = (float*)malloc(weight_size * sizeof(float));
+    layer->bias_gradients = (float*)malloc(output_channels * sizeof(float));
+    layer->input_gradients = (float*)malloc(batch_size * input_channels * input_size * input_size * sizeof(float));
+    
+    if (!layer->weights || !layer->bias || !layer->output || 
+        !layer->weight_gradients || !layer->bias_gradients || !layer->input_gradients) {
+        free_transpose_conv_layer(layer);
+        return NULL;
+    }
+    
+    memset(layer->weights, 0, weight_size * sizeof(float));
+    memset(layer->bias, 0, output_channels * sizeof(float));
+    memset(layer->weight_gradients, 0, weight_size * sizeof(float));
+    memset(layer->bias_gradients, 0, output_channels * sizeof(float));
+    
+    return layer;
+}
+
+// Create upsample layer
+UpsampleLayer* create_upsample_layer(int channels, int input_size, 
+                                     int scale_factor, int batch_size) {
+    UpsampleLayer* layer = (UpsampleLayer*)malloc(sizeof(UpsampleLayer));
+    if (!layer) return NULL;
+    
+    layer->channels = channels;
+    layer->input_size = input_size;
+    layer->scale_factor = scale_factor;
+    layer->output_size = input_size * scale_factor;
+    
+    int output_total_size = batch_size * channels * layer->output_size * layer->output_size;
+    int input_total_size = batch_size * channels * input_size * input_size;
+    
+    layer->output = (float*)malloc(output_total_size * sizeof(float));
+    layer->input_gradients = (float*)malloc(input_total_size * sizeof(float));
+    
+    if (!layer->output || !layer->input_gradients) {
+        free_upsample_layer(layer);
+        return NULL;
+    }
+    
+    return layer;
+}
+
+void free_transpose_conv_layer(TransposeConvLayer* layer) {
+    if (!layer) return;
+    if (layer->weights) free(layer->weights);
+    if (layer->bias) free(layer->bias);
+    if (layer->output) free(layer->output);
+    if (layer->weight_gradients) free(layer->weight_gradients);
+    if (layer->bias_gradients) free(layer->bias_gradients);
+    if (layer->input_gradients) free(layer->input_gradients);
+    free(layer);
+}
+
+void free_upsample_layer(UpsampleLayer* layer) {
+    if (!layer) return;
+    if (layer->output) free(layer->output);
+    if (layer->input_gradients) free(layer->input_gradients);
+    free(layer);
+}
+
+// Create decoder
+Decoder* create_decoder(int batch_size) {
+    Decoder* decoder = (Decoder*)malloc(sizeof(Decoder));
+    if (!decoder) return NULL;
+    
+    decoder->batch_size = batch_size;
+    
+    // Upsample1: 8×8 → 16×16
+    decoder->upsample1 = create_upsample_layer(128, 8, 2, batch_size);
+    
+    // TransConv1: 128ch → 64ch, 16×16
+    decoder->tconv1 = create_transpose_conv_layer(128, 64, 3, 1, 1, 16, batch_size);
+    
+    // Upsample2: 16×16 → 32×32
+    decoder->upsample2 = create_upsample_layer(64, 16, 2, batch_size);
+    
+    // TransConv2: 64ch → 3ch, 32×32
+    decoder->tconv2 = create_transpose_conv_layer(64, 3, 3, 1, 1, 32, batch_size);
+    
+    // Allocate activation buffers
+    decoder->tconv1_relu = (float*)malloc(batch_size * 64 * 16 * 16 * sizeof(float));
+    decoder->tconv1_relu_grad = (float*)malloc(batch_size * 64 * 16 * 16 * sizeof(float));
+    decoder->reconstructed = (float*)malloc(batch_size * 3 * 32 * 32 * sizeof(float));
+    
+    if (!decoder->upsample1 || !decoder->tconv1 || !decoder->upsample2 || 
+        !decoder->tconv2 || !decoder->tconv1_relu || !decoder->tconv1_relu_grad || 
+        !decoder->reconstructed) {
+        free_decoder(decoder);
+        return NULL;
+    }
+    
+    return decoder;
+}
+
+void free_decoder(Decoder* decoder) {
+    if (!decoder) return;
+    
+    free_upsample_layer(decoder->upsample1);
+    free_transpose_conv_layer(decoder->tconv1);
+    free_upsample_layer(decoder->upsample2);
+    free_transpose_conv_layer(decoder->tconv2);
+    
+    if (decoder->tconv1_relu) free(decoder->tconv1_relu);
+    if (decoder->tconv1_relu_grad) free(decoder->tconv1_relu_grad);
+    if (decoder->reconstructed) free(decoder->reconstructed);
+    
+    free(decoder);
+}
+
+void initialize_decoder_weights(Decoder* decoder) {
+    // TransConv1 weights
+    int tconv1_weight_size = 64 * 128 * 3 * 3;
+    float tconv1_std = sqrtf(2.0f / (128 * 3 * 3));
+    for (int i = 0; i < tconv1_weight_size; i++) {
+        decoder->tconv1->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * tconv1_std;
+    }
+    
+    // TransConv2 weights
+    int tconv2_weight_size = 3 * 64 * 3 * 3;
+    float tconv2_std = sqrtf(2.0f / (64 * 3 * 3));
+    for (int i = 0; i < tconv2_weight_size; i++) {
+        decoder->tconv2->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * tconv2_std;
+    }
 }
 
 // Initialize weights using He initialization

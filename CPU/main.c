@@ -60,6 +60,38 @@ float calculate_accuracy(float* output, uint8_t* labels, int batch_size, int num
     return (float)correct / batch_size;
 }
 
+// Calculate reconstruction loss (MSE)
+float calculate_reconstruction_loss(float* reconstructed, float* original, int size) {
+    float loss = 0.0f;
+    for (int i = 0; i < size; i++) {
+        float diff = original[i] - reconstructed[i];
+        loss += diff * diff;
+    }
+    return loss / size;
+}
+
+// Save reconstructed images to binary file
+void save_reconstructed_images(float* images, int num_images, const char* filename) {
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Failed to open file for writing: %s\n", filename);
+        return;
+    }
+    
+    // Write number of images
+    fwrite(&num_images, sizeof(int), 1, f);
+    
+    // Write image size
+    int image_size = CIFAR10_IMAGE_SIZE;
+    fwrite(&image_size, sizeof(int), 1, f);
+    
+    // Write all images
+    fwrite(images, sizeof(float), num_images * CIFAR10_IMAGE_SIZE, f);
+    
+    fclose(f);
+    printf("  Saved %d reconstructed images to %s\n", num_images, filename);
+}
+
 // Print progress bar
 void print_progress_bar(int current, int total, float loss, float acc) {
     const int bar_width = 40;
@@ -77,11 +109,36 @@ void print_progress_bar(int current, int total, float loss, float acc) {
     fflush(stdout);
 }
 
+// Print progress bar with reconstruction loss
+void print_progress_bar_with_recon(int current, int total, float loss, float acc, float recon_loss) {
+    const int bar_width = 40;
+    float progress = (float)current / total;
+    int filled = (int)(progress * bar_width);
+    
+    printf("\r  Progress: [");
+    for (int i = 0; i < bar_width; i++) {
+        if (i < filled) printf("=");
+        else if (i == filled) printf(">");
+        else printf(" ");
+    }
+    printf("] %d/%d (%.1f%%) - Class Loss: %.4f, Acc: %.4f, Recon Loss: %.6f", 
+           current, total, progress * 100, loss, acc, recon_loss);
+    fflush(stdout);
+}
+
 // Train for one epoch
-void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int batch_size) {
+void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int batch_size, 
+                 int is_last_epoch, const char* output_dir) {
     int num_batches = dataset->num_samples / batch_size;
     float total_loss = 0.0f;
     float total_acc = 0.0f;
+    float total_recon_loss = 0.0f;
+    
+    // Storage for reconstructed images if last epoch
+    float* all_reconstructed = NULL;
+    if (is_last_epoch && cnn->decoder) {
+        all_reconstructed = (float*)malloc(dataset->num_samples * CIFAR10_IMAGE_SIZE * sizeof(float));
+    }
     
     double epoch_start = get_time();
     
@@ -99,22 +156,81 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
         total_loss += loss;
         total_acc += acc;
         
-        // Backward pass
+        // Backward pass (classification)
         backward_pass(cnn, batch_images, batch_labels);
         
-        // Update weights
-        update_weights(cnn, learning_rate);
+        // Update classifier weights only (FC1, FC2)
+        update_classifier_weights(cnn, learning_rate);
         
-        // Update progress bar
-        print_progress_bar(batch_idx + 1, num_batches, 
-                          total_loss / (batch_idx + 1), 
-                          total_acc / (batch_idx + 1));
+        // Train decoder and backprop to encoder (every epoch)
+        if (cnn->decoder) {
+            // Decoder forward pass
+            decoder_forward(cnn->decoder, cnn->pool2->output);
+            
+            // Calculate reconstruction loss
+            float recon_loss = calculate_reconstruction_loss(cnn->decoder->reconstructed, 
+                                                            batch_images, 
+                                                            batch_size * CIFAR10_IMAGE_SIZE);
+            total_recon_loss += recon_loss;
+            
+            // Compute reconstruction gradient (MSE gradient)
+            float* recon_grad = (float*)malloc(batch_size * 3 * 32 * 32 * sizeof(float));
+            for (int i = 0; i < batch_size * CIFAR10_IMAGE_SIZE; i++) {
+                recon_grad[i] = 2.0f * (cnn->decoder->reconstructed[i] - batch_images[i]) / 
+                               (batch_size * CIFAR10_IMAGE_SIZE);
+            }
+            
+            // Decoder backward pass (returns gradients for pool2 output)
+            decoder_backward(cnn->decoder, cnn->pool2->output, recon_grad);
+            
+            // Backpropagate reconstruction gradients through encoder
+            // This accumulates gradients with those from classification loss
+            backprop_reconstruction_to_encoder(cnn, batch_images, cnn->decoder->upsample1->input_gradients, batch_size);
+            
+            // Update decoder weights
+            update_decoder_weights(cnn->decoder, learning_rate);
+            
+            // Save reconstructed images for this batch (only in last epoch)
+            if (is_last_epoch && all_reconstructed) {
+                memcpy(&all_reconstructed[offset * CIFAR10_IMAGE_SIZE], 
+                       cnn->decoder->reconstructed, 
+                       batch_size * CIFAR10_IMAGE_SIZE * sizeof(float));
+            }
+            
+            free(recon_grad);
+        }
+        
+        // Update encoder weights with accumulated gradients from both losses
+        update_encoder_weights(cnn, learning_rate);
+        
+        // Update progress bar with both losses
+        float avg_recon = (cnn->decoder) ? total_recon_loss / (batch_idx + 1) : 0.0f;
+        print_progress_bar_with_recon(batch_idx + 1, num_batches, 
+                                      total_loss / (batch_idx + 1), 
+                                      total_acc / (batch_idx + 1),
+                                      avg_recon);
     }
     
     printf("\n");  // New line after progress bar
     double epoch_time = get_time() - epoch_start;
-    printf("  Epoch completed in %.2f seconds - Avg Loss: %.4f, Avg Acc: %.4f\n",
-           epoch_time, total_loss / num_batches, total_acc / num_batches);
+    
+    // Always show reconstruction loss when decoder exists
+    if (cnn->decoder) {
+        printf("  Epoch completed in %.2f seconds - Class Loss: %.4f, Acc: %.4f, Recon Loss: %.6f\n",
+               epoch_time, total_loss / num_batches, total_acc / num_batches, total_recon_loss / num_batches);
+        
+        // Save reconstructed images (only in last epoch)
+        if (is_last_epoch && all_reconstructed) {
+            char filename[256];
+            snprintf(filename, sizeof(filename), "%s/reconstructed_images_cpu.bin", output_dir);
+            save_reconstructed_images(all_reconstructed, dataset->num_samples, filename);
+            free(all_reconstructed);
+            printf("  Saved reconstructed images to %s\n", filename);
+        }
+    } else {
+        printf("  Epoch completed in %.2f seconds - Avg Loss: %.4f, Avg Acc: %.4f\n",
+               epoch_time, total_loss / num_batches, total_acc / num_batches);
+    }
 }
 
 // Evaluate on test set
@@ -148,8 +264,18 @@ int main(int argc, char** argv) {
     // Configuration
     const char* data_dir = "../cifar-10-batches-bin";
     const int batch_size = 32;
-    const int num_epochs = 20;
-    const float learning_rate = 0.001f;
+    int num_epochs = 20;  // Default value
+    const float learning_rate = 0.01f;
+    
+    // Parse command-line arguments
+    if (argc > 1) {
+        num_epochs = atoi(argv[1]);
+        if (num_epochs <= 0) {
+            fprintf(stderr, "Invalid number of epochs: %s\n", argv[1]);
+            fprintf(stderr, "Usage: %s [num_epochs]\n", argv[0]);
+            return 1;
+        }
+    }
     
     printf("=== CIFAR-10 CNN Training (CPU Baseline) ===\n");
     printf("Batch size: %d\n", batch_size);
@@ -186,7 +312,19 @@ int main(int argc, char** argv) {
     
     // Initialize weights
     initialize_weights(cnn);
-    printf("\n");
+    
+    // Create decoder for reconstruction training (trains all epochs)
+    printf("Creating decoder for image reconstruction...\n");
+    cnn->decoder = create_decoder(batch_size);
+    if (!cnn->decoder) {
+        fprintf(stderr, "Failed to create decoder\n");
+        free_cnn(cnn);
+        free_dataset(train_data);
+        free_dataset(test_data);
+        return 1;
+    }
+    initialize_decoder_weights(cnn->decoder);
+    printf("Decoder initialized\n\n");
     
     // Print model architecture
     printf("Model Architecture:\n");
@@ -205,6 +343,7 @@ int main(int argc, char** argv) {
            POOL2_OUTPUT_SIZE, POOL2_OUTPUT_SIZE, CONV2_FILTERS);
     printf("  FC1: %d -> %d\n", FC1_INPUT_SIZE, FC1_OUTPUT_SIZE);
     printf("  FC2: %d -> %d (output)\n", FC2_INPUT_SIZE, FC2_OUTPUT_SIZE);
+    printf("  Decoder: Pool2 -> Upsample -> TransConv(64ch) -> Upsample -> TransConv(3ch) -> 32x32x3\n");
     printf("\n");
     
     // Training loop
@@ -212,8 +351,11 @@ int main(int argc, char** argv) {
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         printf("Epoch %d/%d:\n", epoch + 1, num_epochs);
         
+        // Check if this is the last epoch (for saving reconstructed images)
+        int is_last_epoch = (epoch == num_epochs - 1);
+        
         double epoch_start = get_time();
-        train_epoch(cnn, train_data, learning_rate, batch_size);
+        train_epoch(cnn, train_data, learning_rate, batch_size, is_last_epoch, "../extracted_features");
         double epoch_time = get_time() - epoch_start;
         total_training_time += epoch_time;
         
