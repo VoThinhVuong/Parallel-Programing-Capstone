@@ -267,6 +267,33 @@ void backward_pass(CNN* cnn, float* d_input, uint8_t* d_labels) {
 
 // Update all weights
 void update_weights(CNN* cnn, float learning_rate) {
+    update_encoder_weights(cnn, learning_rate);
+    update_classifier_weights(cnn, learning_rate);
+}
+
+// Update classifier weights only (FC1, FC2)
+void update_classifier_weights(CNN* cnn, float learning_rate) {
+    int threads = 256;
+    
+    // Update FC1
+    int fc1_weight_size = FC1_OUTPUT_SIZE * FC1_INPUT_SIZE;
+    update_weights_kernel<<<(fc1_weight_size + threads - 1) / threads, threads>>>(
+        cnn->fc1->d_weights, cnn->fc1->d_weight_gradients, learning_rate, fc1_weight_size);
+    update_weights_kernel<<<(FC1_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
+        cnn->fc1->d_bias, cnn->fc1->d_bias_gradients, learning_rate, FC1_OUTPUT_SIZE);
+    
+    // Update FC2
+    int fc2_weight_size = FC2_OUTPUT_SIZE * FC2_INPUT_SIZE;
+    update_weights_kernel<<<(fc2_weight_size + threads - 1) / threads, threads>>>(
+        cnn->fc2->d_weights, cnn->fc2->d_weight_gradients, learning_rate, fc2_weight_size);
+    update_weights_kernel<<<(FC2_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
+        cnn->fc2->d_bias, cnn->fc2->d_bias_gradients, learning_rate, FC2_OUTPUT_SIZE);
+    
+    CUDA_CHECK(cudaGetLastError());
+}
+
+// Update encoder weights only (Conv1, Conv2)
+void update_encoder_weights(CNN* cnn, float learning_rate) {
     int threads = 256;
     
     // Update Conv1
@@ -283,19 +310,50 @@ void update_weights(CNN* cnn, float learning_rate) {
     update_weights_kernel<<<(CONV2_FILTERS + threads - 1) / threads, threads>>>(
         cnn->conv2->d_bias, cnn->conv2->d_bias_gradients, learning_rate, CONV2_FILTERS);
     
-    // Update FC1
-    int fc1_weight_size = FC1_OUTPUT_SIZE * FC1_INPUT_SIZE;
-    update_weights_kernel<<<(fc1_weight_size + threads - 1) / threads, threads>>>(
-        cnn->fc1->d_weights, cnn->fc1->d_weight_gradients, learning_rate, fc1_weight_size);
-    update_weights_kernel<<<(FC1_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
-        cnn->fc1->d_bias, cnn->fc1->d_bias_gradients, learning_rate, FC1_OUTPUT_SIZE);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+// Gradient accumulation kernel
+__global__ void accumulate_gradients_kernel(float* gradients, float* additional_gradients, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        gradients[idx] += additional_gradients[idx];
+    }
+}
+
+// Backpropagate reconstruction gradients to encoder (accumulates with classification gradients)
+void backprop_reconstruction_to_encoder(CNN* cnn, float* d_input, float* d_pool2_gradient, int batch_size) {
+    // Backward through Pool2 (accumulate gradients)
+    maxpool_backward(cnn->pool2, d_pool2_gradient, batch_size);
     
-    // Update FC2
-    int fc2_weight_size = FC2_OUTPUT_SIZE * FC2_INPUT_SIZE;
-    update_weights_kernel<<<(fc2_weight_size + threads - 1) / threads, threads>>>(
-        cnn->fc2->d_weights, cnn->fc2->d_weight_gradients, learning_rate, fc2_weight_size);
-    update_weights_kernel<<<(FC2_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
-        cnn->fc2->d_bias, cnn->fc2->d_bias_gradients, learning_rate, FC2_OUTPUT_SIZE);
+    // Backward through ReLU for Conv2 (accumulate)
+    int conv2_size = batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE;
+    float* d_temp_grad;
+    CUDA_CHECK(cudaMalloc(&d_temp_grad, conv2_size * sizeof(float)));
+    relu_backward(cnn->conv2->d_output, cnn->pool2->d_input_gradients, d_temp_grad, conv2_size);
+    
+    int threads = 256;
+    int blocks = (conv2_size + threads - 1) / threads;
+    accumulate_gradients_kernel<<<blocks, threads>>>(cnn->d_conv2_relu_grad, d_temp_grad, conv2_size);
+    cudaFree(d_temp_grad);
+    
+    // Backward through Conv2 (accumulate gradients)
+    conv_backward(cnn->conv2, cnn->pool1->d_output, cnn->d_conv2_relu_grad, batch_size);
+    
+    // Backward through Pool1 (accumulate)
+    maxpool_backward(cnn->pool1, cnn->conv2->d_input_gradients, batch_size);
+    
+    // Backward through ReLU for Conv1 (accumulate)
+    int conv1_size = batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE;
+    CUDA_CHECK(cudaMalloc(&d_temp_grad, conv1_size * sizeof(float)));
+    relu_backward(cnn->conv1->d_output, cnn->pool1->d_input_gradients, d_temp_grad, conv1_size);
+    
+    blocks = (conv1_size + threads - 1) / threads;
+    accumulate_gradients_kernel<<<blocks, threads>>>(cnn->d_conv1_relu_grad, d_temp_grad, conv1_size);
+    cudaFree(d_temp_grad);
+    
+    // Backward through Conv1 (accumulate gradients)
+    conv_backward(cnn->conv1, d_input, cnn->d_conv1_relu_grad, batch_size);
     
     CUDA_CHECK(cudaGetLastError());
 }
