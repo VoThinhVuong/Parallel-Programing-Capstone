@@ -60,6 +60,38 @@ float calculate_accuracy(float* output, uint8_t* labels, int batch_size, int num
     return (float)correct / batch_size;
 }
 
+// Calculate reconstruction loss (MSE) on host
+float calculate_reconstruction_loss(float* reconstructed, float* original, int size) {
+    float loss = 0.0f;
+    for (int i = 0; i < size; i++) {
+        float diff = original[i] - reconstructed[i];
+        loss += diff * diff;
+    }
+    return loss / size;
+}
+
+// Compute reconstruction loss sum (MSE numerator) on device to avoid large D2H copies
+__global__ void reconstruction_loss_sum_kernel(const float* original, const float* reconstructed,
+                                               float* loss_sum, int total_size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < total_size) {
+        float diff = original[idx] - reconstructed[idx];
+        atomicAdd(loss_sum, diff * diff);
+    }
+}
+
+// Compute reconstruction gradient (MSE gradient: 2 * (reconstructed - original) / N)
+__global__ void compute_reconstruction_gradient_kernel(float* original, float* reconstructed,
+                                                      float* gradient, int batch_size, int image_size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_size = batch_size * image_size;
+    if (idx < total_size) {
+        // Weight reconstruction loss lower than classification
+        float scale = 0.01f;
+        gradient[idx] = scale * 2.0f * (reconstructed[idx] - original[idx]) / total_size;
+    }
+}
+
 // Print progress bar
 void print_progress_bar(int current, int total, float loss, float acc) {
     const int bar_width = 40;
@@ -77,11 +109,29 @@ void print_progress_bar(int current, int total, float loss, float acc) {
     fflush(stdout);
 }
 
+// Print progress bar with reconstruction loss
+void print_progress_bar_with_recon(int current, int total, float loss, float acc, float recon_loss) {
+    const int bar_width = 40;
+    float progress = (float)current / total;
+    int filled = (int)(progress * bar_width);
+
+    printf("\r  Progress: [");
+    for (int i = 0; i < bar_width; i++) {
+        if (i < filled) printf("=");
+        else if (i == filled) printf(">");
+        else printf(" ");
+    }
+    printf("] %d/%d (%.1f%%) - Class Loss: %.4f, Acc: %.4f, Recon Loss: %.6f",
+           current, total, progress * 100, loss, acc, recon_loss);
+    fflush(stdout);
+}
+
 // Train for one epoch on GPU
 void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int batch_size) {
     int num_batches = dataset->num_samples / batch_size;
     float total_loss = 0.0f;
     float total_acc = 0.0f;
+    float total_recon_loss = 0.0f;
     
     // Allocate device memory for batch data
     float* d_batch_images;
@@ -91,6 +141,17 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
     
     // Allocate host memory for output (for loss/accuracy calculation)
     float* h_output = (float*)malloc(batch_size * FC2_OUTPUT_SIZE * sizeof(float));
+
+    // Allocate for reconstruction if decoder exists
+    float* d_recon_gradient = NULL;
+    float* d_pool2_recon_gradient = NULL;
+    float* d_recon_loss_sum = NULL;
+    float h_recon_loss_sum = 0.0f;
+    if (cnn->decoder) {
+        CUDA_CHECK(cudaMalloc(&d_recon_gradient, batch_size * CIFAR10_IMAGE_SIZE * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_pool2_recon_gradient, batch_size * FC1_INPUT_SIZE * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_recon_loss_sum, sizeof(float)));
+    }
     
     double epoch_start = get_time();
     
@@ -123,14 +184,61 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
         
         // Backward pass
         backward_pass(cnn, d_batch_images, d_batch_labels);
-        
-        // Update weights
-        update_weights(cnn, learning_rate);
-        
-        // Update progress bar
-        print_progress_bar(batch_idx + 1, num_batches, 
-                          total_loss / (batch_idx + 1), 
-                          total_acc / (batch_idx + 1));
+
+        if (cnn->decoder) {
+            // Update classifier weights first (FC only)
+            update_classifier_weights(cnn, learning_rate);
+
+            // Decoder forward
+            decoder_forward(cnn->decoder, cnn->pool2->d_output, batch_size);
+
+            // Reconstruction loss (MSE) computed on device; copy only a scalar
+            CUDA_CHECK(cudaMemset(d_recon_loss_sum, 0, sizeof(float)));
+            {
+                int threads = 256;
+                int total_size = batch_size * CIFAR10_IMAGE_SIZE;
+                int blocks = (total_size + threads - 1) / threads;
+                reconstruction_loss_sum_kernel<<<blocks, threads>>>(
+                    d_batch_images, cnn->decoder->d_reconstructed, d_recon_loss_sum, total_size);
+                CUDA_CHECK(cudaGetLastError());
+            }
+            CUDA_CHECK(cudaMemcpy(&h_recon_loss_sum, d_recon_loss_sum, sizeof(float), cudaMemcpyDeviceToHost));
+            float recon_loss = h_recon_loss_sum / (batch_size * CIFAR10_IMAGE_SIZE);
+            total_recon_loss += recon_loss;
+
+            // Compute gradient of reconstruction loss on device
+            int threads = 256;
+            int total_size = batch_size * CIFAR10_IMAGE_SIZE;
+            int blocks = (total_size + threads - 1) / threads;
+            compute_reconstruction_gradient_kernel<<<blocks, threads>>>(
+                d_batch_images, cnn->decoder->d_reconstructed, d_recon_gradient,
+                batch_size, CIFAR10_IMAGE_SIZE);
+            CUDA_CHECK(cudaGetLastError());
+
+            // Decoder backward: produce gradient w.r.t pool2 output
+            decoder_backward(cnn->decoder, d_recon_gradient, d_pool2_recon_gradient, batch_size);
+
+            // Backpropagate reconstruction gradients through encoder (accumulate into conv grads)
+            backprop_reconstruction_to_encoder(cnn, d_batch_images, d_pool2_recon_gradient, batch_size);
+
+            // Update decoder and encoder weights
+            update_decoder_weights(cnn->decoder, learning_rate);
+            update_encoder_weights(cnn, learning_rate);
+
+            // Update progress bar
+            print_progress_bar_with_recon(batch_idx + 1, num_batches,
+                                          total_loss / (batch_idx + 1),
+                                          total_acc / (batch_idx + 1),
+                                          total_recon_loss / (batch_idx + 1));
+        } else {
+            // Update weights
+            update_weights(cnn, learning_rate);
+
+            // Update progress bar
+            print_progress_bar(batch_idx + 1, num_batches,
+                              total_loss / (batch_idx + 1),
+                              total_acc / (batch_idx + 1));
+        }
     }
     
     printf("\n");  // New line after progress bar
@@ -142,6 +250,9 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
     free(h_output);
     CUDA_CHECK(cudaFree(d_batch_images));
     CUDA_CHECK(cudaFree(d_batch_labels));
+    if (d_recon_gradient) CUDA_CHECK(cudaFree(d_recon_gradient));
+    if (d_pool2_recon_gradient) CUDA_CHECK(cudaFree(d_pool2_recon_gradient));
+    if (d_recon_loss_sum) CUDA_CHECK(cudaFree(d_recon_loss_sum));
 }
 
 // Evaluate on test set
@@ -261,6 +372,17 @@ int main(int argc, char** argv) {
     
     // Initialize weights
     initialize_weights(cnn);
+
+    // Create and initialize decoder
+    cnn->decoder = create_decoder(batch_size);
+    if (!cnn->decoder) {
+        fprintf(stderr, "Failed to create decoder\n");
+        free_cnn(cnn);
+        free_dataset(train_data);
+        free_dataset(test_data);
+        return 1;
+    }
+    initialize_decoder_weights(cnn->decoder);
     printf("\n");
     
     // Print model architecture
@@ -281,6 +403,16 @@ int main(int argc, char** argv) {
     printf("  FC1: %d -> %d\n", FC1_INPUT_SIZE, FC1_OUTPUT_SIZE);
     printf("  FC2: %d -> %d (output)\n", FC2_INPUT_SIZE, FC2_OUTPUT_SIZE);
     printf("\n");
+    // Print decoder architecture if present
+    if (cnn->decoder) {
+        printf("Decoder Architecture:\n");
+        printf("  Input: %dx%dx%d (pool2 output)\n", POOL2_OUTPUT_SIZE, POOL2_OUTPUT_SIZE, CONV2_FILTERS);
+        printf("  Upsample1: %dx%d -> %dx%d (scale 2)\n", POOL2_OUTPUT_SIZE, POOL2_OUTPUT_SIZE, POOL2_OUTPUT_SIZE*2, POOL2_OUTPUT_SIZE*2);
+        printf("  TransposeConv1: %d -> %d, kernel %d\n", CONV2_FILTERS, 64, 3);
+        printf("  Upsample2: %dx%d -> %dx%d (scale 2)\n", POOL2_OUTPUT_SIZE*2, POOL2_OUTPUT_SIZE*2, POOL2_OUTPUT_SIZE*4, POOL2_OUTPUT_SIZE*4);
+        printf("  TransposeConv2: %d -> %d, kernel %d (reconstructed image)\n", 64, 3, 3);
+        printf("\n");
+    }
     
     // Training loop
     double total_training_time = 0.0;

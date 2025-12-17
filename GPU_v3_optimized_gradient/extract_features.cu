@@ -278,21 +278,29 @@ int main(int argc, char** argv) {
         // Save labels too
         if (extract_train) {
             FILE* f = fopen("../extracted_features/train_labels.bin", "wb");
-            fwrite(&train_data->num_samples, sizeof(int), 1, f);
-            fwrite(train_data->labels, sizeof(uint8_t), train_data->num_samples, f);
-            fclose(f);
+            if (f) {
+                fwrite(&train_data->num_samples, sizeof(int), 1, f);
+                fwrite(train_data->labels, sizeof(uint8_t), train_data->num_samples, f);
+                fclose(f);
+                printf("Saved training labels\n");
+            }
         }
         
         if (extract_test) {
             FILE* f = fopen("../extracted_features/test_labels.bin", "wb");
-            fwrite(&test_data->num_samples, sizeof(int), 1, f);
-            fwrite(test_data->labels, sizeof(uint8_t), test_data->num_samples, f);
-            fclose(f);
+            if (f) {
+                fwrite(&test_data->num_samples, sizeof(int), 1, f);
+                fwrite(test_data->labels, sizeof(uint8_t), test_data->num_samples, f);
+                fclose(f);
+                printf("Saved test labels\n");
+            }
         }
         
         free_cnn(cnn);
         free_dataset(train_data);
         free_dataset(test_data);
+        
+        printf("\nFeature extraction complete!\n");
     }
     
     // Load features if not extracted

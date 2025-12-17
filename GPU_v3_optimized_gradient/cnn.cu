@@ -127,6 +127,7 @@ CNN* create_cnn(int batch_size) {
     if (!cnn) return NULL;
     
     cnn->batch_size = batch_size;
+    cnn->decoder = NULL;
     
     // Create layers
     cnn->conv1 = create_conv_layer(INPUT_CHANNELS, CONV1_FILTERS, CONV1_KERNEL_SIZE,
@@ -161,6 +162,113 @@ CNN* create_cnn(int batch_size) {
     return cnn;
 }
 
+// Create transpose convolution layer
+TransposeConvLayer* create_transpose_conv_layer(int input_channels, int output_channels,
+                                                int kernel_size, int stride, int padding,
+                                                int input_size, int batch_size) {
+    TransposeConvLayer* layer = (TransposeConvLayer*)malloc(sizeof(TransposeConvLayer));
+    if (!layer) return NULL;
+
+    layer->input_channels = input_channels;
+    layer->output_channels = output_channels;
+    layer->kernel_size = kernel_size;
+    layer->stride = stride;
+    layer->padding = padding;
+    layer->input_size = input_size;
+    layer->output_size = (input_size - 1) * stride + kernel_size - 2 * padding;
+
+    int weight_size = output_channels * input_channels * kernel_size * kernel_size;
+    int output_total_size = batch_size * output_channels * layer->output_size * layer->output_size;
+    int input_grad_size = batch_size * input_channels * input_size * input_size;
+
+    CUDA_CHECK(cudaMalloc(&layer->d_weights, weight_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&layer->d_bias, output_channels * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&layer->d_output, output_total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&layer->d_weight_gradients, weight_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&layer->d_bias_gradients, output_channels * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&layer->d_input_gradients, input_grad_size * sizeof(float)));
+
+    CUDA_CHECK(cudaMemset(layer->d_weights, 0, weight_size * sizeof(float)));
+    CUDA_CHECK(cudaMemset(layer->d_bias, 0, output_channels * sizeof(float)));
+    CUDA_CHECK(cudaMemset(layer->d_weight_gradients, 0, weight_size * sizeof(float)));
+    CUDA_CHECK(cudaMemset(layer->d_bias_gradients, 0, output_channels * sizeof(float)));
+
+    return layer;
+}
+
+// Create upsample layer
+UpsampleLayer* create_upsample_layer(int channels, int input_size, int scale_factor, int batch_size) {
+    UpsampleLayer* layer = (UpsampleLayer*)malloc(sizeof(UpsampleLayer));
+    if (!layer) return NULL;
+
+    layer->channels = channels;
+    layer->input_size = input_size;
+    layer->scale_factor = scale_factor;
+    layer->output_size = input_size * scale_factor;
+
+    int output_total_size = batch_size * channels * layer->output_size * layer->output_size;
+    int input_grad_size = batch_size * channels * input_size * input_size;
+
+    CUDA_CHECK(cudaMalloc(&layer->d_output, output_total_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&layer->d_input_gradients, input_grad_size * sizeof(float)));
+
+    return layer;
+}
+
+// Create decoder
+Decoder* create_decoder(int batch_size) {
+    Decoder* decoder = (Decoder*)malloc(sizeof(Decoder));
+    if (!decoder) return NULL;
+
+    decoder->batch_size = batch_size;
+
+    decoder->upsample1 = create_upsample_layer(128, 8, 2, batch_size);
+    decoder->tconv1 = create_transpose_conv_layer(128, 64, 3, 1, 1, 16, batch_size);
+    decoder->upsample2 = create_upsample_layer(64, 16, 2, batch_size);
+    decoder->tconv2 = create_transpose_conv_layer(64, 3, 3, 1, 1, 32, batch_size);
+
+    CUDA_CHECK(cudaMalloc(&decoder->d_tconv1_relu, batch_size * 64 * 16 * 16 * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&decoder->d_tconv1_relu_grad, batch_size * 64 * 16 * 16 * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&decoder->d_reconstructed, batch_size * 3 * 32 * 32 * sizeof(float)));
+
+    if (!decoder->upsample1 || !decoder->tconv1 || !decoder->upsample2 || !decoder->tconv2) {
+        free_decoder(decoder);
+        return NULL;
+    }
+
+    return decoder;
+}
+
+void free_transpose_conv_layer(TransposeConvLayer* layer) {
+    if (!layer) return;
+    if (layer->d_weights) cudaFree(layer->d_weights);
+    if (layer->d_bias) cudaFree(layer->d_bias);
+    if (layer->d_output) cudaFree(layer->d_output);
+    if (layer->d_weight_gradients) cudaFree(layer->d_weight_gradients);
+    if (layer->d_bias_gradients) cudaFree(layer->d_bias_gradients);
+    if (layer->d_input_gradients) cudaFree(layer->d_input_gradients);
+    free(layer);
+}
+
+void free_upsample_layer(UpsampleLayer* layer) {
+    if (!layer) return;
+    if (layer->d_output) cudaFree(layer->d_output);
+    if (layer->d_input_gradients) cudaFree(layer->d_input_gradients);
+    free(layer);
+}
+
+void free_decoder(Decoder* decoder) {
+    if (!decoder) return;
+    free_upsample_layer(decoder->upsample1);
+    free_transpose_conv_layer(decoder->tconv1);
+    free_upsample_layer(decoder->upsample2);
+    free_transpose_conv_layer(decoder->tconv2);
+    if (decoder->d_tconv1_relu) cudaFree(decoder->d_tconv1_relu);
+    if (decoder->d_tconv1_relu_grad) cudaFree(decoder->d_tconv1_relu_grad);
+    if (decoder->d_reconstructed) cudaFree(decoder->d_reconstructed);
+    free(decoder);
+}
+
 // Free CNN
 void free_cnn(CNN* cnn) {
     if (!cnn) return;
@@ -171,6 +279,8 @@ void free_cnn(CNN* cnn) {
     free_maxpool_layer(cnn->pool2);
     free_fc_layer(cnn->fc1);
     free_fc_layer(cnn->fc2);
+
+    if (cnn->decoder) free_decoder(cnn->decoder);
     
     if (cnn->d_conv1_relu) cudaFree(cnn->d_conv1_relu);
     if (cnn->d_conv2_relu) cudaFree(cnn->d_conv2_relu);
@@ -228,4 +338,34 @@ void initialize_weights(CNN* cnn) {
     free(h_fc2_weights);
     
     printf("Weights initialized and copied to GPU\n");
+}
+
+void initialize_decoder_weights(Decoder* decoder) {
+    // TransConv1 weights (128 → 64 channels)
+    int tconv1_weight_size = 64 * 128 * 3 * 3;
+    float* h_tconv1_weights = (float*)malloc(tconv1_weight_size * sizeof(float));
+    float tconv1_std = sqrtf(2.0f / (128 * 3 * 3));
+    for (int i = 0; i < tconv1_weight_size; i++) {
+        h_tconv1_weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * tconv1_std;
+    }
+    CUDA_CHECK(cudaMemcpy(decoder->tconv1->d_weights, h_tconv1_weights,
+                          tconv1_weight_size * sizeof(float), cudaMemcpyHostToDevice));
+    free(h_tconv1_weights);
+
+    // TransConv2 weights (64 → 3 channels)
+    int tconv2_weight_size = 3 * 64 * 3 * 3;
+    float* h_tconv2_weights = (float*)malloc(tconv2_weight_size * sizeof(float));
+    float tconv2_std = sqrtf(2.0f / (64 * 3 * 3));
+    for (int i = 0; i < tconv2_weight_size; i++) {
+        h_tconv2_weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * tconv2_std;
+    }
+    CUDA_CHECK(cudaMemcpy(decoder->tconv2->d_weights, h_tconv2_weights,
+                          tconv2_weight_size * sizeof(float), cudaMemcpyHostToDevice));
+    free(h_tconv2_weights);
+
+    // Biases
+    CUDA_CHECK(cudaMemset(decoder->tconv1->d_bias, 0, 64 * sizeof(float)));
+    CUDA_CHECK(cudaMemset(decoder->tconv2->d_bias, 0, 3 * sizeof(float)));
+
+    printf("Decoder weights initialized and copied to GPU\n");
 }

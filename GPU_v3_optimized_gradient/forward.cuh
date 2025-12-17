@@ -30,4 +30,18 @@ void softmax_forward(float* d_input, float* d_output, int batch_size, int num_cl
 // Complete forward pass through the network
 void forward_pass(CNN* cnn, float* d_input);
 
+// Decoder forward pass functions
+__global__ void upsample_forward_kernel(float* input, float* output,
+                                       int batch_size, int channels,
+                                       int input_size, int output_size, int scale);
+
+__global__ void transpose_conv_forward_kernel(float* input, float* weights, float* bias, float* output,
+                                             int batch_size, int input_channels, int output_channels,
+                                             int input_size, int output_size, int kernel_size,
+                                             int stride, int padding);
+
+void upsample_forward(UpsampleLayer* layer, float* d_input, int batch_size);
+void transpose_conv_forward(TransposeConvLayer* layer, float* d_input, int batch_size);
+void decoder_forward(Decoder* decoder, float* d_input, int batch_size);
+
 #endif // FORWARD_CUH

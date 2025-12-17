@@ -162,8 +162,11 @@ __global__ void conv_backward_input_kernel(float* output_gradient, float* weight
                                           int stride, int padding) {
     int b = blockIdx.z;
     int ic = blockIdx.y;
-    int ih = blockIdx.x * blockDim.x + threadIdx.x;
-    int iw = threadIdx.y;
+    int grid_w = (input_size + blockDim.y - 1) / blockDim.y;
+    int ih_block = blockIdx.x / grid_w;
+    int iw_block = blockIdx.x % grid_w;
+    int ih = ih_block * blockDim.x + threadIdx.x;
+    int iw = iw_block * blockDim.y + threadIdx.y;
     
     if (b >= batch_size || ic >= input_channels || ih >= input_size || iw >= input_size) {
         return;
@@ -216,6 +219,13 @@ __global__ void clear_gradients_kernel(float* gradients, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
         gradients[idx] = 0.0f;
+    }
+}
+
+__global__ void accumulate_gradients_kernel(float* dst, const float* src, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        dst[idx] += src[idx];
     }
 }
 
@@ -303,9 +313,9 @@ void conv_backward(ConvLayer* layer, float* d_input, float* d_output_gradient, i
     
     // Step 2: Compute input gradients (atomic-free)
     dim3 input_block(8, 8);
-    dim3 input_grid((layer->input_size + input_block.x - 1) / input_block.x,
-                    layer->input_channels,
-                    batch_size);
+    int grid_h = (layer->input_size + input_block.x - 1) / input_block.x;
+    int grid_w = (layer->input_size + input_block.y - 1) / input_block.y;
+    dim3 input_grid(grid_h * grid_w, layer->input_channels, batch_size);
     
     conv_backward_input_kernel<<<input_grid, input_block>>>(
         d_output_gradient, layer->d_weights,
@@ -362,35 +372,115 @@ void backward_pass(CNN* cnn, float* d_input, uint8_t* d_labels) {
 
 // Update all weights
 void update_weights(CNN* cnn, float learning_rate) {
+    update_encoder_weights(cnn, learning_rate);
+    update_classifier_weights(cnn, learning_rate);
+}
+
+void update_classifier_weights(CNN* cnn, float learning_rate) {
     int threads = 256;
-    
-    // Update Conv1
-    int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
-    update_weights_kernel<<<(conv1_weight_size + threads - 1) / threads, threads>>>(
-        cnn->conv1->d_weights, cnn->conv1->d_weight_gradients, learning_rate, conv1_weight_size);
-    update_weights_kernel<<<(CONV1_FILTERS + threads - 1) / threads, threads>>>(
-        cnn->conv1->d_bias, cnn->conv1->d_bias_gradients, learning_rate, CONV1_FILTERS);
-    
-    // Update Conv2
-    int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
-    update_weights_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
-        cnn->conv2->d_weights, cnn->conv2->d_weight_gradients, learning_rate, conv2_weight_size);
-    update_weights_kernel<<<(CONV2_FILTERS + threads - 1) / threads, threads>>>(
-        cnn->conv2->d_bias, cnn->conv2->d_bias_gradients, learning_rate, CONV2_FILTERS);
-    
+
     // Update FC1
     int fc1_weight_size = FC1_OUTPUT_SIZE * FC1_INPUT_SIZE;
     update_weights_kernel<<<(fc1_weight_size + threads - 1) / threads, threads>>>(
         cnn->fc1->d_weights, cnn->fc1->d_weight_gradients, learning_rate, fc1_weight_size);
     update_weights_kernel<<<(FC1_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
         cnn->fc1->d_bias, cnn->fc1->d_bias_gradients, learning_rate, FC1_OUTPUT_SIZE);
-    
+
     // Update FC2
     int fc2_weight_size = FC2_OUTPUT_SIZE * FC2_INPUT_SIZE;
     update_weights_kernel<<<(fc2_weight_size + threads - 1) / threads, threads>>>(
         cnn->fc2->d_weights, cnn->fc2->d_weight_gradients, learning_rate, fc2_weight_size);
     update_weights_kernel<<<(FC2_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
         cnn->fc2->d_bias, cnn->fc2->d_bias_gradients, learning_rate, FC2_OUTPUT_SIZE);
-    
+
     CUDA_CHECK(cudaGetLastError());
+}
+
+void update_encoder_weights(CNN* cnn, float learning_rate) {
+    int threads = 256;
+
+    // Update Conv1
+    int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
+    update_weights_kernel<<<(conv1_weight_size + threads - 1) / threads, threads>>>(
+        cnn->conv1->d_weights, cnn->conv1->d_weight_gradients, learning_rate, conv1_weight_size);
+    update_weights_kernel<<<(CONV1_FILTERS + threads - 1) / threads, threads>>>(
+        cnn->conv1->d_bias, cnn->conv1->d_bias_gradients, learning_rate, CONV1_FILTERS);
+
+    // Update Conv2
+    int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
+    update_weights_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
+        cnn->conv2->d_weights, cnn->conv2->d_weight_gradients, learning_rate, conv2_weight_size);
+    update_weights_kernel<<<(CONV2_FILTERS + threads - 1) / threads, threads>>>(
+        cnn->conv2->d_bias, cnn->conv2->d_bias_gradients, learning_rate, CONV2_FILTERS);
+
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void backprop_reconstruction_to_encoder(CNN* cnn, float* d_input, float* d_pool2_gradient, int batch_size) {
+    // Backprop from pool2 output (same shape as pool2->d_output) into conv layers.
+    // We must accumulate conv weight/bias gradients on top of existing classification gradients.
+
+    static float* d_conv2_w_tmp = NULL;
+    static float* d_conv2_b_tmp = NULL;
+    static float* d_conv1_w_tmp = NULL;
+    static float* d_conv1_b_tmp = NULL;
+
+    const int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
+    const int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
+
+    if (!d_conv2_w_tmp) {
+        CUDA_CHECK(cudaMalloc(&d_conv2_w_tmp, conv2_weight_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_conv2_b_tmp, CONV2_FILTERS * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_conv1_w_tmp, conv1_weight_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&d_conv1_b_tmp, CONV1_FILTERS * sizeof(float)));
+    }
+
+    // Pool2 backward
+    maxpool_backward(cnn->pool2, d_pool2_gradient, batch_size);
+
+    // ReLU backward (Conv2)
+    relu_backward(cnn->conv2->d_output, cnn->pool2->d_input_gradients, cnn->d_conv2_relu_grad,
+                  batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE);
+
+    // Conv2 backward into temporary grad buffers
+    float* conv2_w_orig = cnn->conv2->d_weight_gradients;
+    float* conv2_b_orig = cnn->conv2->d_bias_gradients;
+    cnn->conv2->d_weight_gradients = d_conv2_w_tmp;
+    cnn->conv2->d_bias_gradients = d_conv2_b_tmp;
+    conv_backward(cnn->conv2, cnn->pool1->d_output, cnn->d_conv2_relu_grad, batch_size);
+
+    // Accumulate into original
+    int threads = 256;
+    accumulate_gradients_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
+        conv2_w_orig, d_conv2_w_tmp, conv2_weight_size);
+    accumulate_gradients_kernel<<<(CONV2_FILTERS + threads - 1) / threads, threads>>>(
+        conv2_b_orig, d_conv2_b_tmp, CONV2_FILTERS);
+    CUDA_CHECK(cudaGetLastError());
+
+    // Restore pointers
+    cnn->conv2->d_weight_gradients = conv2_w_orig;
+    cnn->conv2->d_bias_gradients = conv2_b_orig;
+
+    // Pool1 backward
+    maxpool_backward(cnn->pool1, cnn->conv2->d_input_gradients, batch_size);
+
+    // ReLU backward (Conv1)
+    relu_backward(cnn->conv1->d_output, cnn->pool1->d_input_gradients, cnn->d_conv1_relu_grad,
+                  batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE);
+
+    // Conv1 backward into temporary grad buffers
+    float* conv1_w_orig = cnn->conv1->d_weight_gradients;
+    float* conv1_b_orig = cnn->conv1->d_bias_gradients;
+    cnn->conv1->d_weight_gradients = d_conv1_w_tmp;
+    cnn->conv1->d_bias_gradients = d_conv1_b_tmp;
+    conv_backward(cnn->conv1, d_input, cnn->d_conv1_relu_grad, batch_size);
+
+    accumulate_gradients_kernel<<<(conv1_weight_size + threads - 1) / threads, threads>>>(
+        conv1_w_orig, d_conv1_w_tmp, conv1_weight_size);
+    accumulate_gradients_kernel<<<(CONV1_FILTERS + threads - 1) / threads, threads>>>(
+        conv1_b_orig, d_conv1_b_tmp, CONV1_FILTERS);
+    CUDA_CHECK(cudaGetLastError());
+
+    cnn->conv1->d_weight_gradients = conv1_w_orig;
+    cnn->conv1->d_bias_gradients = conv1_b_orig;
 }

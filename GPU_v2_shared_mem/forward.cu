@@ -12,8 +12,14 @@ __global__ void conv_forward_kernel(float* input, float* weights, float* bias, f
                                    int stride, int padding) {
     int b = blockIdx.z;  // batch index
     int oc = blockIdx.y;  // output channel
-    int oh = blockIdx.x * blockDim.x + threadIdx.x;  // output height
-    int ow = threadIdx.y;  // output width
+
+    // Flattened 2D tiling over (oh, ow) into grid.x
+    int num_w_blocks = (output_size + blockDim.y - 1) / blockDim.y;
+    int oh_block = blockIdx.x / num_w_blocks;
+    int ow_block = blockIdx.x % num_w_blocks;
+
+    int oh = oh_block * blockDim.x + threadIdx.x;  // output height
+    int ow = ow_block * blockDim.y + threadIdx.y;  // output width
     
     if (b >= batch_size || oc >= output_channels || oh >= output_size || ow >= output_size) {
         return;
@@ -40,8 +46,8 @@ __global__ void conv_forward_kernel(float* input, float* weights, float* bias, f
                 int sw = threadIdx.y + lw * blockDim.y;
                 
                 if (sh < tile_height && sw < tile_width) {
-                    int ih = blockIdx.x * blockDim.x + sh - padding;
-                    int iw = sw - padding;
+                    int ih = oh_block * blockDim.x + sh - padding;
+                    int iw = ow_block * blockDim.y + sw - padding;
                     
                     if (ih >= 0 && ih < input_size && iw >= 0 && iw < input_size) {
                         int input_idx = b * (input_channels * input_size * input_size) +
@@ -94,8 +100,14 @@ __global__ void maxpool_forward_kernel(float* input, float* output, int* max_ind
                                       int output_size, int pool_size, int stride) {
     int b = blockIdx.z;  // batch index
     int c = blockIdx.y;  // channel
-    int oh = blockIdx.x * blockDim.x + threadIdx.x;  // output height
-    int ow = threadIdx.y;  // output width
+
+    // Flattened 2D tiling over (oh, ow) into grid.x
+    int num_w_blocks = (output_size + blockDim.y - 1) / blockDim.y;
+    int oh_block = blockIdx.x / num_w_blocks;
+    int ow_block = blockIdx.x % num_w_blocks;
+
+    int oh = oh_block * blockDim.x + threadIdx.x;  // output height
+    int ow = ow_block * blockDim.y + threadIdx.y;  // output width
     
     if (b >= batch_size || c >= channels || oh >= output_size || ow >= output_size) {
         return;
@@ -117,8 +129,8 @@ __global__ void maxpool_forward_kernel(float* input, float* output, int* max_ind
             int sw = threadIdx.y + lw * blockDim.y;
             
             if (sh < tile_height && sw < tile_width) {
-                int ih = blockIdx.x * blockDim.x * stride + sh;
-                int iw = sw;
+                int ih = oh_block * blockDim.x * stride + sh;
+                int iw = ow_block * blockDim.y * stride + sw;
                 
                 if (ih < input_size && iw < input_size) {
                     int input_idx = b * (channels * input_size * input_size) +
@@ -263,9 +275,9 @@ __global__ void softmax_forward_kernel(float* input, float* output, int batch_si
 // Host wrapper functions
 void conv_forward(ConvLayer* layer, float* d_input, int batch_size) {
     dim3 block(8, 8);
-    dim3 grid((layer->output_size + block.x - 1) / block.x, 
-              layer->output_channels, 
-              batch_size);
+    int grid_h = (layer->output_size + block.x - 1) / block.x;
+    int grid_w = (layer->output_size + block.y - 1) / block.y;
+    dim3 grid(grid_h * grid_w, layer->output_channels, batch_size);
     
     // Calculate shared memory size
     int tile_height = block.x + layer->kernel_size - 1;
@@ -290,9 +302,9 @@ void relu_forward(float* d_input, float* d_output, int size) {
 
 void maxpool_forward(MaxPoolLayer* layer, float* d_input, int batch_size) {
     dim3 block(8, 8);
-    dim3 grid((layer->output_size + block.x - 1) / block.x, 
-              layer->input_channels, 
-              batch_size);
+    int grid_h = (layer->output_size + block.x - 1) / block.x;
+    int grid_w = (layer->output_size + block.y - 1) / block.y;
+    dim3 grid(grid_h * grid_w, layer->input_channels, batch_size);
     
     // Calculate shared memory size
     int tile_height = block.x * layer->stride + layer->pool_size - layer->stride;

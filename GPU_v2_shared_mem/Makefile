@@ -26,7 +26,7 @@ CC = gcc
 CFLAGS = -O3 -Wall -std=c99
 
 # Source files for main training
-CU_SOURCES = main.cu cnn.cu forward.cu backward.cu feature_extractor.cu
+CU_SOURCES = main.cu cnn.cu forward.cu backward.cu decoder.cu feature_extractor.cu
 C_SOURCES = data_loader.cu
 CU_OBJECTS = $(CU_SOURCES:.cu=.o)
 C_OBJECTS = $(C_SOURCES:.cu=.o)

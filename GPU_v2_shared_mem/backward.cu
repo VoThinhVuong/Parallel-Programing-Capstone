@@ -62,8 +62,13 @@ __global__ void maxpool_backward_kernel(float* output_gradient, int* max_indices
                                        int batch_size, int channels, int input_size, int output_size) {
     int b = blockIdx.z;
     int c = blockIdx.y;
-    int oh = blockIdx.x * blockDim.x + threadIdx.x;
-    int ow = threadIdx.y;
+
+    int num_w_blocks = (output_size + blockDim.y - 1) / blockDim.y;
+    int oh_block = blockIdx.x / num_w_blocks;
+    int ow_block = blockIdx.x % num_w_blocks;
+
+    int oh = oh_block * blockDim.x + threadIdx.x;
+    int ow = ow_block * blockDim.y + threadIdx.y;
     
     if (b >= batch_size || c >= channels || oh >= output_size || ow >= output_size) {
         return;
@@ -84,8 +89,13 @@ __global__ void conv_backward_kernel(float* input, float* weights, float* output
                                     int input_size, int output_size, int kernel_size,
                                     int stride, int padding) {
     int oc = blockIdx.y;
-    int oh = blockIdx.x * blockDim.x + threadIdx.x;
-    int ow = threadIdx.y;
+
+    int num_w_blocks = (output_size + blockDim.y - 1) / blockDim.y;
+    int oh_block = blockIdx.x / num_w_blocks;
+    int ow_block = blockIdx.x % num_w_blocks;
+
+    int oh = oh_block * blockDim.x + threadIdx.x;
+    int ow = ow_block * blockDim.y + threadIdx.y;
     
     if (oc >= output_channels || oh >= output_size || ow >= output_size) {
         return;
@@ -192,7 +202,9 @@ void maxpool_backward(MaxPoolLayer* layer, float* d_output_gradient, int batch_s
     clear_gradients_kernel<<<(input_total_size + threads - 1) / threads, threads>>>(layer->d_input_gradients, input_total_size);
     
     dim3 block(8, 8);
-    dim3 grid((layer->output_size + block.x - 1) / block.x, layer->input_channels, batch_size);
+    int grid_h = (layer->output_size + block.x - 1) / block.x;
+    int grid_w = (layer->output_size + block.y - 1) / block.y;
+    dim3 grid(grid_h * grid_w, layer->input_channels, batch_size);
     
     maxpool_backward_kernel<<<grid, block>>>(d_output_gradient, layer->d_max_indices, layer->d_input_gradients,
                                             batch_size, layer->input_channels,
@@ -212,7 +224,9 @@ void conv_backward(ConvLayer* layer, float* d_input, float* d_output_gradient, i
     
     // Compute gradients
     dim3 block(8, 8);
-    dim3 grid((layer->output_size + block.x - 1) / block.x, layer->output_channels);
+    int grid_h = (layer->output_size + block.x - 1) / block.x;
+    int grid_w = (layer->output_size + block.y - 1) / block.y;
+    dim3 grid(grid_h * grid_w, layer->output_channels);
     
     conv_backward_kernel<<<grid, block>>>(
         d_input, layer->d_weights, d_output_gradient,
@@ -270,35 +284,93 @@ void backward_pass(CNN* cnn, float* d_input, uint8_t* d_labels) {
 
 // Update all weights
 void update_weights(CNN* cnn, float learning_rate) {
+    update_encoder_weights(cnn, learning_rate);
+    update_classifier_weights(cnn, learning_rate);
+}
+
+// Update classifier weights only (FC1, FC2)
+void update_classifier_weights(CNN* cnn, float learning_rate) {
     int threads = 256;
-    
-    // Update Conv1
-    int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
-    update_weights_kernel<<<(conv1_weight_size + threads - 1) / threads, threads>>>(
-        cnn->conv1->d_weights, cnn->conv1->d_weight_gradients, learning_rate, conv1_weight_size);
-    update_weights_kernel<<<(CONV1_FILTERS + threads - 1) / threads, threads>>>(
-        cnn->conv1->d_bias, cnn->conv1->d_bias_gradients, learning_rate, CONV1_FILTERS);
-    
-    // Update Conv2
-    int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
-    update_weights_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
-        cnn->conv2->d_weights, cnn->conv2->d_weight_gradients, learning_rate, conv2_weight_size);
-    update_weights_kernel<<<(CONV2_FILTERS + threads - 1) / threads, threads>>>(
-        cnn->conv2->d_bias, cnn->conv2->d_bias_gradients, learning_rate, CONV2_FILTERS);
-    
+
     // Update FC1
     int fc1_weight_size = FC1_OUTPUT_SIZE * FC1_INPUT_SIZE;
     update_weights_kernel<<<(fc1_weight_size + threads - 1) / threads, threads>>>(
         cnn->fc1->d_weights, cnn->fc1->d_weight_gradients, learning_rate, fc1_weight_size);
     update_weights_kernel<<<(FC1_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
         cnn->fc1->d_bias, cnn->fc1->d_bias_gradients, learning_rate, FC1_OUTPUT_SIZE);
-    
+
     // Update FC2
     int fc2_weight_size = FC2_OUTPUT_SIZE * FC2_INPUT_SIZE;
     update_weights_kernel<<<(fc2_weight_size + threads - 1) / threads, threads>>>(
         cnn->fc2->d_weights, cnn->fc2->d_weight_gradients, learning_rate, fc2_weight_size);
     update_weights_kernel<<<(FC2_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
         cnn->fc2->d_bias, cnn->fc2->d_bias_gradients, learning_rate, FC2_OUTPUT_SIZE);
-    
+
+    CUDA_CHECK(cudaGetLastError());
+}
+
+// Update encoder weights only (Conv1, Conv2)
+void update_encoder_weights(CNN* cnn, float learning_rate) {
+    int threads = 256;
+
+    // Update Conv1
+    int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
+    update_weights_kernel<<<(conv1_weight_size + threads - 1) / threads, threads>>>(
+        cnn->conv1->d_weights, cnn->conv1->d_weight_gradients, learning_rate, conv1_weight_size);
+    update_weights_kernel<<<(CONV1_FILTERS + threads - 1) / threads, threads>>>(
+        cnn->conv1->d_bias, cnn->conv1->d_bias_gradients, learning_rate, CONV1_FILTERS);
+
+    // Update Conv2
+    int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
+    update_weights_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
+        cnn->conv2->d_weights, cnn->conv2->d_weight_gradients, learning_rate, conv2_weight_size);
+    update_weights_kernel<<<(CONV2_FILTERS + threads - 1) / threads, threads>>>(
+        cnn->conv2->d_bias, cnn->conv2->d_bias_gradients, learning_rate, CONV2_FILTERS);
+
+    CUDA_CHECK(cudaGetLastError());
+}
+
+// Gradient accumulation kernel
+__global__ void accumulate_gradients_kernel(float* gradients, float* additional_gradients, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        gradients[idx] += additional_gradients[idx];
+    }
+}
+
+// Backpropagate reconstruction gradients to encoder (accumulates with classification gradients)
+void backprop_reconstruction_to_encoder(CNN* cnn, float* d_input, float* d_pool2_gradient, int batch_size) {
+    // Backward through Pool2 (accumulate gradients)
+    maxpool_backward(cnn->pool2, d_pool2_gradient, batch_size);
+
+    // Backward through ReLU for Conv2 (accumulate)
+    int conv2_size = batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE;
+    float* d_temp_grad;
+    CUDA_CHECK(cudaMalloc(&d_temp_grad, conv2_size * sizeof(float)));
+    relu_backward(cnn->conv2->d_output, cnn->pool2->d_input_gradients, d_temp_grad, conv2_size);
+
+    int threads = 256;
+    int blocks = (conv2_size + threads - 1) / threads;
+    accumulate_gradients_kernel<<<blocks, threads>>>(cnn->d_conv2_relu_grad, d_temp_grad, conv2_size);
+    CUDA_CHECK(cudaFree(d_temp_grad));
+
+    // Backward through Conv2 (accumulate gradients)
+    conv_backward(cnn->conv2, cnn->pool1->d_output, cnn->d_conv2_relu_grad, batch_size);
+
+    // Backward through Pool1 (accumulate)
+    maxpool_backward(cnn->pool1, cnn->conv2->d_input_gradients, batch_size);
+
+    // Backward through ReLU for Conv1 (accumulate)
+    int conv1_size = batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE;
+    CUDA_CHECK(cudaMalloc(&d_temp_grad, conv1_size * sizeof(float)));
+    relu_backward(cnn->conv1->d_output, cnn->pool1->d_input_gradients, d_temp_grad, conv1_size);
+
+    blocks = (conv1_size + threads - 1) / threads;
+    accumulate_gradients_kernel<<<blocks, threads>>>(cnn->d_conv1_relu_grad, d_temp_grad, conv1_size);
+    CUDA_CHECK(cudaFree(d_temp_grad));
+
+    // Backward through Conv1 (accumulate gradients)
+    conv_backward(cnn->conv1, d_input, cnn->d_conv1_relu_grad, batch_size);
+
     CUDA_CHECK(cudaGetLastError());
 }

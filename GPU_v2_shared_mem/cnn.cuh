@@ -103,6 +103,54 @@ typedef struct {
     float* d_input_gradients;
 } FCLayer;
 
+// Transpose convolution layer (for decoder)
+typedef struct {
+    int input_channels;
+    int output_channels;
+    int kernel_size;
+    int stride;
+    int padding;
+    int input_size;
+    int output_size;
+
+    // Device pointers
+    float* d_weights;  // output_channels x input_channels x kernel_size x kernel_size
+    float* d_bias;     // output_channels
+    float* d_output;   // batch_size x output_channels x output_size x output_size
+
+    // For backpropagation
+    float* d_weight_gradients;
+    float* d_bias_gradients;
+    float* d_input_gradients;
+} TransposeConvLayer;
+
+// Upsampling layer (nearest neighbor)
+typedef struct {
+    int channels;
+    int input_size;
+    int output_size;
+    int scale_factor;
+
+    // Device pointers
+    float* d_output;   // batch_size x channels x output_size x output_size
+    float* d_input_gradients;
+} UpsampleLayer;
+
+// Decoder network
+typedef struct {
+    UpsampleLayer* upsample1;      // 8×8 → 16×16
+    TransposeConvLayer* tconv1;    // 128ch → 64ch
+    UpsampleLayer* upsample2;      // 16×16 → 32×32
+    TransposeConvLayer* tconv2;    // 64ch → 3ch
+
+    // Device pointers
+    float* d_tconv1_relu;          // After ReLU
+    float* d_tconv1_relu_grad;     // Gradient
+    float* d_reconstructed;        // Final 32×32×3 output
+
+    int batch_size;
+} Decoder;
+
 // Complete CNN model (GPU version)
 typedef struct {
     // Layers
@@ -112,6 +160,9 @@ typedef struct {
     MaxPoolLayer* pool2;
     FCLayer* fc1;
     FCLayer* fc2;
+
+    // Decoder (optional, for reconstruction)
+    Decoder* decoder;
     
     // Intermediate activations (device pointers)
     float* d_conv1_relu;  // After ReLU
@@ -143,11 +194,23 @@ void free_conv_layer(ConvLayer* layer);
 void free_maxpool_layer(MaxPoolLayer* layer);
 void free_fc_layer(FCLayer* layer);
 
+void free_transpose_conv_layer(TransposeConvLayer* layer);
+void free_upsample_layer(UpsampleLayer* layer);
+void free_decoder(Decoder* decoder);
+
+// Decoder layer creation
+TransposeConvLayer* create_transpose_conv_layer(int input_channels, int output_channels,
+                                                int kernel_size, int stride, int padding,
+                                                int input_size, int batch_size);
+UpsampleLayer* create_upsample_layer(int channels, int input_size, int scale_factor, int batch_size);
+Decoder* create_decoder(int batch_size);
+
 // CNN creation and cleanup
 CNN* create_cnn(int batch_size);
 void free_cnn(CNN* cnn);
 
 // Initialize weights with random values (on host then copy to device)
 void initialize_weights(CNN* cnn);
+void initialize_decoder_weights(Decoder* decoder);
 
 #endif // CNN_CUH
