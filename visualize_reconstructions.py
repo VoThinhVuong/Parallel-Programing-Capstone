@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import struct
 import os
+import argparse
 
 # CIFAR-10 class names
 CLASS_NAMES = ['airplane', 'automobile', 'bird', 'cat', 'deer', 
@@ -246,14 +247,28 @@ def interactive_viewer(original, reconstructed, labels):
     plt.show()
 
 def main():
-    # Paths
-    data_dir = 'cifar-10-batches-bin'
-    recon_file = 'extracted_features/reconstructed_images_cpu.bin'
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Visualize reconstructed CIFAR-10 images')
+    parser.add_argument('--file', type=str, 
+                       default='extracted_features/reconstructed_images_cpu.bin',
+                       help='Path to reconstructed images binary file (default: extracted_features/reconstructed_images_cpu.bin)')
+    parser.add_argument('--data-dir', type=str,
+                       default='cifar-10-batches-bin',
+                       help='Path to CIFAR-10 data directory (default: cifar-10-batches-bin)')
+    args = parser.parse_args()
+    
+    # Path
+    data_dir = args.data_dir
+    recon_file = args.file
+    print(f"Using reconstruction file: {recon_file}")
     
     # Check if files exist
     if not os.path.exists(recon_file):
         print(f"Error: Reconstructed images file not found: {recon_file}")
         print("Please run the CNN training with decoder enabled first.")
+        print("\nUsage examples:")
+        print("  python visualize_reconstructions.py --file extracted_features/reconstructed_images_cpu.bin")
+        print("  python visualize_reconstructions.py --file extracted_features/reconstructed_images_gpu.bin")
         return
     
     print("Loading CIFAR-10 test data...")
