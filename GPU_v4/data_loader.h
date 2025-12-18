@@ -37,7 +37,7 @@ CIFAR10_Dataset* create_dataset(int num_samples);
 void free_dataset(CIFAR10_Dataset* dataset);
 
 // Load and normalize training data
-CIFAR10_Dataset* load_training_data(const char* data_dir);
+CIFAR10_Dataset* load_training_data(const char* data_dir, int num_batches);
 // Load and normalize test data
 CIFAR10_Dataset* load_test_data(const char* data_dir);
 

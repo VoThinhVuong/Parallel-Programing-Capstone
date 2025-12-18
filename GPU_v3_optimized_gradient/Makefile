@@ -2,14 +2,14 @@
 
 # Detect OS
 ifeq ($(OS),Windows_NT)
-    EXECUTABLE = cifar10_cnn_gpu_v3.exe
-    FEATURE_EXTRACTOR = extract_features_v3.exe
+    EXECUTABLE = cifar10_cnn_gpu.exe
+    FEATURE_EXTRACTOR = extract_features.exe
     RM = del /Q
 	NVCC_FLAGS = -O3 -arch=sm_50 -std=c++11
     RMDIR = rmdir /S /Q
 else
-    EXECUTABLE = cifar10_cnn_gpu_v3
-    FEATURE_EXTRACTOR = extract_features_v3
+    EXECUTABLE = cifar10_cnn_gpu
+    FEATURE_EXTRACTOR = extract_features
 	NVCC_FLAGS = -O3 -arch=sm_75 -std=c++11
     RM = rm -f
     RMDIR = rm -rf

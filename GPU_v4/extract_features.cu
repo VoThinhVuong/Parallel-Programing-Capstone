@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
     if (extract_train || extract_test) {
         // Load datasets
         printf("Loading training data...\n");
-        CIFAR10_Dataset* train_data = load_training_data(data_dir);
+        CIFAR10_Dataset* train_data = load_training_data(data_dir, 5);
         if (!train_data) {
             fprintf(stderr, "Failed to load training data\n");
             return 1;

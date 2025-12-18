@@ -302,10 +302,10 @@ def main():
                           save_path='reconstruction_per_class.png')
     
     # Interactive viewer
-    print("\nLaunching interactive viewer...")
-    print("  Use LEFT/RIGHT arrows to navigate")
-    print("  Press Q to quit")
-    interactive_viewer(original, reconstructed, labels)
+    # print("\nLaunching interactive viewer...")
+    # print("  Use LEFT/RIGHT arrows to navigate")
+    # print("  Press Q to quit")
+    # interactive_viewer(original, reconstructed, labels)
 
 if __name__ == '__main__':
     main()

@@ -263,16 +263,44 @@ void evaluate(CNN* cnn, CIFAR10_Dataset* dataset, int batch_size) {
 int main(int argc, char** argv) {
     // Configuration
     const char* data_dir = "../cifar-10-batches-bin";
-    const int batch_size = 32;
+    int batch_size = 32;  // Default value
     int num_epochs = 20;  // Default value
-    const float learning_rate = 0.01f;
+    float learning_rate = 0.01f;
+    int num_train_batches = 5;  // Default: use all 5 training batches
     
     // Parse command-line arguments
     if (argc > 1) {
         num_epochs = atoi(argv[1]);
         if (num_epochs <= 0) {
             fprintf(stderr, "Invalid number of epochs: %s\n", argv[1]);
-            fprintf(stderr, "Usage: %s [num_epochs]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [num_epochs] [learning_rate] [batch_size] [num_train_batches]\n", argv[0]);
+            return 1;
+        }
+    }
+    
+    if (argc > 2) {
+        learning_rate = atof(argv[2]);
+        if (learning_rate <= 0.0f) {
+            fprintf(stderr, "Invalid learning rate: %s\n", argv[2]);
+            fprintf(stderr, "Usage: %s [num_epochs] [learning_rate] [batch_size] [num_train_batches]\n", argv[0]);
+            return 1;
+        }
+    }
+    
+    if (argc > 3) {
+        batch_size = atoi(argv[3]);
+        if (batch_size <= 0 || batch_size > 512) {
+            fprintf(stderr, "Invalid batch size: %s (must be between 1 and 512)\n", argv[3]);
+            fprintf(stderr, "Usage: %s [num_epochs] [learning_rate] [batch_size] [num_train_batches]\n", argv[0]);
+            return 1;
+        }
+    }
+    
+    if (argc > 4) {
+        num_train_batches = atoi(argv[4]);
+        if (num_train_batches < 1 || num_train_batches > 5) {
+            fprintf(stderr, "Invalid number of training batches: %s (must be between 1 and 5)\n", argv[4]);
+            fprintf(stderr, "Usage: %s [num_epochs] [learning_rate] [batch_size] [num_train_batches]\n", argv[0]);
             return 1;
         }
     }
@@ -280,11 +308,12 @@ int main(int argc, char** argv) {
     printf("=== CIFAR-10 CNN Training (CPU Baseline) ===\n");
     printf("Batch size: %d\n", batch_size);
     printf("Learning rate: %.4f\n", learning_rate);
-    printf("Number of epochs: %d\n\n", num_epochs);
+    printf("Number of epochs: %d\n", num_epochs);
+    printf("Training batches to use: %d/5\n\n", num_train_batches);
     
     // Load data
     printf("Loading training data...\n");
-    CIFAR10_Dataset* train_data = load_training_data(data_dir);
+    CIFAR10_Dataset* train_data = load_training_data(data_dir, num_train_batches);
     if (!train_data) {
         fprintf(stderr, "Failed to load training data\n");
         return 1;

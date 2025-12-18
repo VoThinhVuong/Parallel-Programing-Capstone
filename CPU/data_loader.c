@@ -107,9 +107,13 @@ void normalize_images(CIFAR10_Dataset* dataset, CIFAR10_Batch* batch, int offset
     }
 }
 
-// Load training data (5 batches)
-CIFAR10_Dataset* load_training_data(const char* data_dir) {
-    const int num_batches = 5;
+// Load training data (1 to 5 batches)
+CIFAR10_Dataset* load_training_data(const char* data_dir, int num_batches) {
+    if (num_batches < 1 || num_batches > 5) {
+        fprintf(stderr, "Error: num_batches must be between 1 and 5\n");
+        return NULL;
+    }
+    
     const int total_samples = num_batches * CIFAR10_BATCH_SIZE;
     
     CIFAR10_Dataset* dataset = create_dataset(total_samples);
