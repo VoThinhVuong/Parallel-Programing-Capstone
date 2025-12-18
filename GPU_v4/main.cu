@@ -10,8 +10,10 @@
 
 #ifdef _WIN32
     #include <windows.h>
+    #include <direct.h>  // For _mkdir
 #else
     #include <sys/time.h>
+    #include <sys/stat.h>  // For mkdir
 #endif
 
 // Utility function to get current time in seconds
@@ -26,6 +28,28 @@ double get_time() {
     gettimeofday(&tv, NULL);
     return tv.tv_sec + tv.tv_usec * 1e-6;
 #endif
+}
+
+// Save reconstructed images to binary file
+void save_reconstructed_images(float* images, int num_images, const char* filename) {
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Failed to open file for writing: %s\n", filename);
+        return;
+    }
+    
+    // Write number of images
+    fwrite(&num_images, sizeof(int), 1, f);
+    
+    // Write image size
+    int image_size = CIFAR10_IMAGE_SIZE;
+    fwrite(&image_size, sizeof(int), 1, f);
+    
+    // Write all images
+    fwrite(images, sizeof(float), num_images * CIFAR10_IMAGE_SIZE, f);
+    
+    fclose(f);
+    printf("  Saved %d reconstructed images to %s\n", num_images, filename);
 }
 
 // Calculate cross-entropy loss (on host, data copied from device)
@@ -222,7 +246,8 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
                 float* d_class_loss_sum, float* d_class_correct_sum,
                 float* d_class_loss_partial, float* d_class_correct_partial,
                 float* d_recon_gradient, float* d_recon_loss_sum,
-                float* d_recon_loss_partial, float* d_pool2_recon_gradient) {
+                float* d_recon_loss_partial, float* d_pool2_recon_gradient,
+                int is_last_epoch, const char* output_dir) {
     int num_batches = dataset->num_samples / batch_size;
     float total_loss = 0.0f;
     float total_acc = 0.0f;
@@ -230,6 +255,14 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
     float h_class_loss_sum = 0.0f;
     float h_class_correct_sum = 0.0f;
     float h_recon_loss_sum = 0.0f;
+    
+    // Allocate for reconstruction accumulation if decoder exists and last epoch
+    float* h_reconstructed = NULL;
+    float* all_reconstructed = NULL;
+    if (cnn->decoder && is_last_epoch) {
+        h_reconstructed = (float*)malloc(batch_size * CIFAR10_IMAGE_SIZE * sizeof(float));
+        all_reconstructed = (float*)malloc(dataset->num_samples * CIFAR10_IMAGE_SIZE * sizeof(float));
+    }
     
     double epoch_start = get_time();
     
@@ -316,6 +349,16 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
                 batch_size, CIFAR10_IMAGE_SIZE);
             CUDA_CHECK(cudaGetLastError());
 
+            // Copy reconstructed images to host and accumulate if last epoch
+            if (is_last_epoch && all_reconstructed) {
+                CUDA_CHECK(cudaMemcpy(h_reconstructed, cnn->decoder->d_reconstructed,
+                                     batch_size * CIFAR10_IMAGE_SIZE * sizeof(float),
+                                     cudaMemcpyDeviceToHost));
+                memcpy(&all_reconstructed[offset * CIFAR10_IMAGE_SIZE],
+                       h_reconstructed,
+                       batch_size * CIFAR10_IMAGE_SIZE * sizeof(float));
+            }
+            
             // Decoder backward: produce gradient w.r.t pool2 output
             decoder_backward(cnn->decoder, d_recon_gradient, d_pool2_recon_gradient, batch_size);
 
@@ -346,6 +389,17 @@ void train_epoch(CNN* cnn, CIFAR10_Dataset* dataset, float learning_rate, int ba
     double epoch_time = get_time() - epoch_start;
     printf("  Epoch completed in %.2f seconds - Avg Loss: %.4f, Avg Acc: %.4f\n",
            epoch_time, total_loss / num_batches, total_acc / num_batches);
+    
+    // Save reconstructed images (only in last epoch)
+    if (cnn->decoder && is_last_epoch && all_reconstructed) {
+        char filename[256];
+        snprintf(filename, sizeof(filename), "%s/reconstructed_images_gpu_v4.bin", output_dir);
+        save_reconstructed_images(all_reconstructed, dataset->num_samples, filename);
+    }
+    
+    // Cleanup
+    if (h_reconstructed) free(h_reconstructed);
+    if (all_reconstructed) free(all_reconstructed);
 }
 
 // Evaluate on test set (pre-allocated buffers passed in)
@@ -554,16 +608,26 @@ int main(int argc, char** argv) {
         CUDA_CHECK(cudaMalloc(&d_recon_loss_partial, blocks * sizeof(float)));
     }
 
+    // Ensure output dir exists (for consistency with other versions)
+    const char* output_dir = "../extracted_features";
+    #ifdef _WIN32
+        _mkdir(output_dir);
+    #else
+        mkdir(output_dir, 0777);
+    #endif
+    
     // Training loop
     double total_training_time = 0.0;
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         printf("Epoch %d/%d:\n", epoch + 1, num_epochs);
         
         double epoch_start = get_time();
+        int is_last_epoch = (epoch == num_epochs - 1);
         train_epoch(cnn, train_data, learning_rate, batch_size,
                    d_batch_images, d_batch_labels,
                    d_class_loss_sum, d_class_correct_sum, d_class_loss_partial, d_class_correct_partial,
-                   d_recon_gradient, d_recon_loss_sum, d_recon_loss_partial, d_pool2_recon_gradient);
+                   d_recon_gradient, d_recon_loss_sum, d_recon_loss_partial, d_pool2_recon_gradient,
+                   is_last_epoch, output_dir);
         double epoch_time = get_time() - epoch_start;
         total_training_time += epoch_time;
         
