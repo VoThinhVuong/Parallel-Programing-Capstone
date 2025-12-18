@@ -12,7 +12,6 @@ void softmax_forward(float* input, float* output, int batch_size, int num_classe
 
 // Decoder forward pass functions
 void upsample_forward(UpsampleLayer* layer, float* input, int batch_size);
-void transpose_conv_forward(TransposeConvLayer* layer, float* input, int batch_size);
 void decoder_forward(Decoder* decoder, float* input);
 
 // Complete forward pass through the network

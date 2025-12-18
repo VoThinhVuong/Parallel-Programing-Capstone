@@ -292,26 +292,32 @@ Decoder* create_decoder(int batch_size) {
     
     decoder->batch_size = batch_size;
     
-    // Upsample1: 8×8 → 16×16
+    // Conv1: 128ch → 128ch, 8×8, stride=1, padding=1
+    decoder->conv1 = create_conv_layer(128, 128, 3, 1, 1, 8, batch_size);
+    
+    // Upsample1: 8×8 → 16×16 (128 channels)
     decoder->upsample1 = create_upsample_layer(128, 8, 2, batch_size);
     
-    // TransConv1: 128ch → 64ch, 16×16
-    decoder->tconv1 = create_transpose_conv_layer(128, 64, 3, 1, 1, 16, batch_size);
+    // Conv2: 128ch → 256ch, 16×16, stride=1, padding=1
+    decoder->conv2 = create_conv_layer(128, 256, 3, 1, 1, 16, batch_size);
     
-    // Upsample2: 16×16 → 32×32
-    decoder->upsample2 = create_upsample_layer(64, 16, 2, batch_size);
+    // Upsample2: 16×16 → 32×32 (256 channels)
+    decoder->upsample2 = create_upsample_layer(256, 16, 2, batch_size);
     
-    // TransConv2: 64ch → 3ch, 32×32
-    decoder->tconv2 = create_transpose_conv_layer(64, 3, 3, 1, 1, 32, batch_size);
+    // Conv3: 256ch → 3ch, 32×32, stride=1, padding=1
+    decoder->conv3 = create_conv_layer(256, 3, 3, 1, 1, 32, batch_size);
     
     // Allocate activation buffers
-    decoder->tconv1_relu = (float*)malloc(batch_size * 64 * 16 * 16 * sizeof(float));
-    decoder->tconv1_relu_grad = (float*)malloc(batch_size * 64 * 16 * 16 * sizeof(float));
+    decoder->conv1_relu = (float*)malloc(batch_size * 128 * 8 * 8 * sizeof(float));
+    decoder->conv1_relu_grad = (float*)malloc(batch_size * 128 * 8 * 8 * sizeof(float));
+    decoder->conv2_relu = (float*)malloc(batch_size * 256 * 16 * 16 * sizeof(float));
+    decoder->conv2_relu_grad = (float*)malloc(batch_size * 256 * 16 * 16 * sizeof(float));
     decoder->reconstructed = (float*)malloc(batch_size * 3 * 32 * 32 * sizeof(float));
     
-    if (!decoder->upsample1 || !decoder->tconv1 || !decoder->upsample2 || 
-        !decoder->tconv2 || !decoder->tconv1_relu || !decoder->tconv1_relu_grad || 
-        !decoder->reconstructed) {
+    if (!decoder->conv1 || !decoder->upsample1 || !decoder->conv2 || 
+        !decoder->upsample2 || !decoder->conv3 || !decoder->conv1_relu || 
+        !decoder->conv1_relu_grad || !decoder->conv2_relu || 
+        !decoder->conv2_relu_grad || !decoder->reconstructed) {
         free_decoder(decoder);
         return NULL;
     }
@@ -322,31 +328,41 @@ Decoder* create_decoder(int batch_size) {
 void free_decoder(Decoder* decoder) {
     if (!decoder) return;
     
+    free_conv_layer(decoder->conv1);
     free_upsample_layer(decoder->upsample1);
-    free_transpose_conv_layer(decoder->tconv1);
+    free_conv_layer(decoder->conv2);
     free_upsample_layer(decoder->upsample2);
-    free_transpose_conv_layer(decoder->tconv2);
+    free_conv_layer(decoder->conv3);
     
-    if (decoder->tconv1_relu) free(decoder->tconv1_relu);
-    if (decoder->tconv1_relu_grad) free(decoder->tconv1_relu_grad);
+    if (decoder->conv1_relu) free(decoder->conv1_relu);
+    if (decoder->conv1_relu_grad) free(decoder->conv1_relu_grad);
+    if (decoder->conv2_relu) free(decoder->conv2_relu);
+    if (decoder->conv2_relu_grad) free(decoder->conv2_relu_grad);
     if (decoder->reconstructed) free(decoder->reconstructed);
     
     free(decoder);
 }
 
 void initialize_decoder_weights(Decoder* decoder) {
-    // TransConv1 weights
-    int tconv1_weight_size = 64 * 128 * 3 * 3;
-    float tconv1_std = sqrtf(2.0f / (128 * 3 * 3));
-    for (int i = 0; i < tconv1_weight_size; i++) {
-        decoder->tconv1->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * tconv1_std;
+    // Conv1 weights: 128 * 128 * 3 * 3
+    int conv1_weight_size = 128 * 128 * 3 * 3;
+    float conv1_std = sqrtf(2.0f / (128 * 3 * 3));
+    for (int i = 0; i < conv1_weight_size; i++) {
+        decoder->conv1->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * conv1_std;
     }
     
-    // TransConv2 weights
-    int tconv2_weight_size = 3 * 64 * 3 * 3;
-    float tconv2_std = sqrtf(2.0f / (64 * 3 * 3));
-    for (int i = 0; i < tconv2_weight_size; i++) {
-        decoder->tconv2->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * tconv2_std;
+    // Conv2 weights: 256 * 128 * 3 * 3
+    int conv2_weight_size = 256 * 128 * 3 * 3;
+    float conv2_std = sqrtf(2.0f / (128 * 3 * 3));
+    for (int i = 0; i < conv2_weight_size; i++) {
+        decoder->conv2->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * conv2_std;
+    }
+    
+    // Conv3 weights: 3 * 256 * 3 * 3
+    int conv3_weight_size = 3 * 256 * 3 * 3;
+    float conv3_std = sqrtf(2.0f / (256 * 3 * 3));
+    for (int i = 0; i < conv3_weight_size; i++) {
+        decoder->conv3->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * conv3_std;
     }
 }
 

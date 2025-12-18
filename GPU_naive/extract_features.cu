@@ -296,9 +296,23 @@ int main(int argc, char** argv) {
             }
         }
         
+        printf("Freeing CNN...\n");
+        fflush(stdout);
         free_cnn(cnn);
+        printf("CNN freed.\n");
+        fflush(stdout);
+        
+        printf("Freeing train dataset...\n");
+        fflush(stdout);
         free_dataset(train_data);
+        printf("Train dataset freed.\n");
+        fflush(stdout);
+        
+        printf("Freeing test dataset...\n");
+        fflush(stdout);
         free_dataset(test_data);
+        printf("Test dataset freed.\n");
+        fflush(stdout);
         
         printf("\nFeature extraction complete!\n");
     }

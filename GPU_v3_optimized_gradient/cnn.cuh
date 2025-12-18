@@ -103,27 +103,6 @@ typedef struct {
     float* d_input_gradients;
 } FCLayer;
 
-// Transpose convolution layer (for decoder)
-typedef struct {
-    int input_channels;
-    int output_channels;
-    int kernel_size;
-    int stride;
-    int padding;
-    int input_size;
-    int output_size;
-
-    // Device pointers
-    float* d_weights;  // output_channels x input_channels x kernel_size x kernel_size
-    float* d_bias;     // output_channels
-    float* d_output;   // batch_size x output_channels x output_size x output_size
-
-    // For backpropagation
-    float* d_weight_gradients;
-    float* d_bias_gradients;
-    float* d_input_gradients;
-} TransposeConvLayer;
-
 // Upsampling layer (nearest neighbor)
 typedef struct {
     int channels;
@@ -138,14 +117,20 @@ typedef struct {
 
 // Decoder network
 typedef struct {
-    UpsampleLayer* upsample1;      // 8×8 → 16×16
-    TransposeConvLayer* tconv1;    // 128ch → 64ch
-    UpsampleLayer* upsample2;      // 16×16 → 32×32
-    TransposeConvLayer* tconv2;    // 64ch → 3ch
+    ConvLayer* conv1;              // 128ch → 128ch, 8×8
+    UpsampleLayer* upsample1;      // 8×8 → 16×16 (128ch)
+    ConvLayer* conv2;              // 128ch → 256ch, 16×16
+    UpsampleLayer* upsample2;      // 16×16 → 32×32 (256ch)
+    ConvLayer* conv3;              // 256ch → 3ch, 32×32
 
-    // Device pointers
-    float* d_tconv1_relu;          // After ReLU
-    float* d_tconv1_relu_grad;     // Gradient
+    // Device pointers for intermediate activations
+    float* d_conv1_relu;           // After Conv1 + ReLU: batch_size * 128 * 8 * 8
+    float* d_conv2_relu;           // After Conv2 + ReLU: batch_size * 256 * 16 * 16
+    
+    // Gradients for ReLU layers
+    float* d_conv1_relu_grad;      // batch_size * 128 * 8 * 8
+    float* d_conv2_relu_grad;      // batch_size * 256 * 16 * 16
+    
     float* d_reconstructed;        // Final 32×32×3 output
 
     int batch_size;
@@ -194,14 +179,10 @@ void free_conv_layer(ConvLayer* layer);
 void free_maxpool_layer(MaxPoolLayer* layer);
 void free_fc_layer(FCLayer* layer);
 
-void free_transpose_conv_layer(TransposeConvLayer* layer);
 void free_upsample_layer(UpsampleLayer* layer);
 void free_decoder(Decoder* decoder);
 
 // Decoder layer creation
-TransposeConvLayer* create_transpose_conv_layer(int input_channels, int output_channels,
-                                                int kernel_size, int stride, int padding,
-                                                int input_size, int batch_size);
 UpsampleLayer* create_upsample_layer(int channels, int input_size, int scale_factor, int batch_size);
 Decoder* create_decoder(int batch_size);
 

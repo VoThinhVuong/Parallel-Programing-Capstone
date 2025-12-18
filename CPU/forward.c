@@ -174,90 +174,31 @@ void upsample_forward(UpsampleLayer* layer, float* input, int batch_size) {
     }
 }
 
-// Transpose convolution forward pass
-void transpose_conv_forward(TransposeConvLayer* layer, float* input, int batch_size) {
-    int input_size = layer->input_size;
-    int output_size = layer->output_size;
-    int kernel_size = layer->kernel_size;
-    int padding = layer->padding;
-    int stride = layer->stride;
-    int input_channels = layer->input_channels;
-    int output_channels = layer->output_channels;
-    
-    // Clear output
-    memset(layer->output, 0, batch_size * output_channels * output_size * output_size * sizeof(float));
-    
-    // For each image in batch
-    for (int b = 0; b < batch_size; b++) {
-        // For each input position
-        for (int ih = 0; ih < input_size; ih++) {
-            for (int iw = 0; iw < input_size; iw++) {
-                // For each input channel
-                for (int ic = 0; ic < input_channels; ic++) {
-                    int input_idx = b * (input_channels * input_size * input_size) +
-                                   ic * (input_size * input_size) +
-                                   ih * input_size + iw;
-                    float input_val = input[input_idx];
-                    
-                    // For each output channel
-                    for (int oc = 0; oc < output_channels; oc++) {
-                        // For each kernel position
-                        for (int kh = 0; kh < kernel_size; kh++) {
-                            for (int kw = 0; kw < kernel_size; kw++) {
-                                int oh = ih * stride + kh - padding;
-                                int ow = iw * stride + kw - padding;
-                                
-                                // Check bounds
-                                if (oh >= 0 && oh < output_size && ow >= 0 && ow < output_size) {
-                                    int output_idx = b * (output_channels * output_size * output_size) +
-                                                    oc * (output_size * output_size) +
-                                                    oh * output_size + ow;
-                                    int weight_idx = oc * (input_channels * kernel_size * kernel_size) +
-                                                    ic * (kernel_size * kernel_size) +
-                                                    kh * kernel_size + kw;
-                                    layer->output[output_idx] += input_val * layer->weights[weight_idx];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Add bias
-        for (int oc = 0; oc < output_channels; oc++) {
-            for (int oh = 0; oh < output_size; oh++) {
-                for (int ow = 0; ow < output_size; ow++) {
-                    int output_idx = b * (output_channels * output_size * output_size) +
-                                    oc * (output_size * output_size) +
-                                    oh * output_size + ow;
-                    layer->output[output_idx] += layer->bias[oc];
-                }
-            }
-        }
-    }
-}
-
 // Decoder forward pass
 void decoder_forward(Decoder* decoder, float* input) {
     int batch_size = decoder->batch_size;
     
-    // Upsample1: 8×8 → 16×16
-    upsample_forward(decoder->upsample1, input, batch_size);
+    // Conv1 + ReLU: 128ch → 128ch, 8×8
+    conv_forward(decoder->conv1, input, batch_size);
+    relu_forward(decoder->conv1->output, decoder->conv1_relu,
+                 batch_size * 128 * 8 * 8);
     
-    // TransConv1 + ReLU: 128ch → 64ch
-    transpose_conv_forward(decoder->tconv1, decoder->upsample1->output, batch_size);
-    relu_forward(decoder->tconv1->output, decoder->tconv1_relu,
-                 batch_size * 64 * 16 * 16);
+    // Upsample1: 8×8 → 16×16 (128 channels)
+    upsample_forward(decoder->upsample1, decoder->conv1_relu, batch_size);
+    
+    // Conv2 + ReLU: 128ch → 256ch, 16×16
+    conv_forward(decoder->conv2, decoder->upsample1->output, batch_size);
+    relu_forward(decoder->conv2->output, decoder->conv2_relu,
+                 batch_size * 256 * 16 * 16);
     
     // Upsample2: 16×16 → 32×32
-    upsample_forward(decoder->upsample2, decoder->tconv1_relu, batch_size);
+    upsample_forward(decoder->upsample2, decoder->conv2_relu, batch_size);
     
-    // TransConv2: 64ch → 3ch (final reconstruction)
-    transpose_conv_forward(decoder->tconv2, decoder->upsample2->output, batch_size);
+    // Conv3: 64ch → 3ch, 32×32 (final reconstruction)
+    conv_forward(decoder->conv3, decoder->upsample2->output, batch_size);
     
     // Copy to reconstructed output
-    memcpy(decoder->reconstructed, decoder->tconv2->output, 
+    memcpy(decoder->reconstructed, decoder->conv3->output, 
            batch_size * 3 * 32 * 32 * sizeof(float));
 }
 

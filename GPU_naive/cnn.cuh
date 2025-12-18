@@ -11,8 +11,8 @@
 #define INPUT_HEIGHT 32
 #define INPUT_CHANNELS 3
 
-// Conv1 layer: 32 filters, 3x3 kernel, stride 1, padding 1
-#define CONV1_FILTERS 32
+// Conv1 layer: 128 filters, 3x3 kernel, stride 1, padding 1
+#define CONV1_FILTERS 128
 #define CONV1_KERNEL_SIZE 3
 #define CONV1_STRIDE 1
 #define CONV1_PADDING 1
@@ -138,14 +138,17 @@ typedef struct {
 
 // Decoder network
 typedef struct {
+    ConvLayer* conv1;              // 128ch → 128ch, 8×8
     UpsampleLayer* upsample1;      // 8×8 → 16×16
-    TransposeConvLayer* tconv1;    // 128ch → 64ch
+    ConvLayer* conv2;              // 128ch → 256ch, 16×16
     UpsampleLayer* upsample2;      // 16×16 → 32×32
-    TransposeConvLayer* tconv2;    // 64ch → 3ch
+    ConvLayer* conv3;              // 256ch → 3ch, 32×32
     
     // Device pointers
-    float* d_tconv1_relu;          // After ReLU
-    float* d_tconv1_relu_grad;     // Gradient
+    float* d_conv1_relu;           // After Conv1 + ReLU
+    float* d_conv1_relu_grad;      // Gradient
+    float* d_conv2_relu;           // After Conv2 + ReLU
+    float* d_conv2_relu_grad;      // Gradient
     float* d_reconstructed;        // Final 32×32×3 output
     
     int batch_size;

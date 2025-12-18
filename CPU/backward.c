@@ -250,79 +250,6 @@ void backprop_reconstruction_to_encoder(CNN* cnn, float* input, float* pool2_gra
     conv_backward(cnn->conv1, input, cnn->conv1_relu_grad, batch_size);
 }
 
-// Transpose convolution backward pass
-void transpose_conv_backward(TransposeConvLayer* layer, float* input, float* output_gradient, int batch_size) {
-    int input_size = layer->input_size;
-    int output_size = layer->output_size;
-    int kernel_size = layer->kernel_size;
-    int padding = layer->padding;
-    int stride = layer->stride;
-    int input_channels = layer->input_channels;
-    int output_channels = layer->output_channels;
-    
-    // Clear gradients
-    memset(layer->weight_gradients, 0, output_channels * input_channels * kernel_size * kernel_size * sizeof(float));
-    memset(layer->bias_gradients, 0, output_channels * sizeof(float));
-    memset(layer->input_gradients, 0, batch_size * input_channels * input_size * input_size * sizeof(float));
-    
-    // For each image in batch
-    for (int b = 0; b < batch_size; b++) {
-        // For each input position
-        for (int ih = 0; ih < input_size; ih++) {
-            for (int iw = 0; iw < input_size; iw++) {
-                // For each input channel
-                for (int ic = 0; ic < input_channels; ic++) {
-                    int input_idx = b * (input_channels * input_size * input_size) +
-                                   ic * (input_size * input_size) +
-                                   ih * input_size + iw;
-                    float input_val = input[input_idx];
-                    
-                    // For each output channel
-                    for (int oc = 0; oc < output_channels; oc++) {
-                        // For each kernel position
-                        for (int kh = 0; kh < kernel_size; kh++) {
-                            for (int kw = 0; kw < kernel_size; kw++) {
-                                int oh = ih * stride + kh - padding;
-                                int ow = iw * stride + kw - padding;
-                                
-                                // Check bounds
-                                if (oh >= 0 && oh < output_size && ow >= 0 && ow < output_size) {
-                                    int output_idx = b * (output_channels * output_size * output_size) +
-                                                    oc * (output_size * output_size) +
-                                                    oh * output_size + ow;
-                                    int weight_idx = oc * (input_channels * kernel_size * kernel_size) +
-                                                    ic * (kernel_size * kernel_size) +
-                                                    kh * kernel_size + kw;
-                                    
-                                    float out_grad = output_gradient[output_idx];
-                                    
-                                    // Weight gradient
-                                    layer->weight_gradients[weight_idx] += out_grad * input_val;
-                                    
-                                    // Input gradient
-                                    layer->input_gradients[input_idx] += out_grad * layer->weights[weight_idx];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Bias gradients
-        for (int oc = 0; oc < output_channels; oc++) {
-            for (int oh = 0; oh < output_size; oh++) {
-                for (int ow = 0; ow < output_size; ow++) {
-                    int output_idx = b * (output_channels * output_size * output_size) +
-                                    oc * (output_size * output_size) +
-                                    oh * output_size + ow;
-                    layer->bias_gradients[oc] += output_gradient[output_idx];
-                }
-            }
-        }
-    }
-}
-
 // Upsample backward pass
 void upsample_backward(UpsampleLayer* layer, float* output_gradient, int batch_size) {
     int input_size = layer->input_size;
@@ -357,40 +284,56 @@ void upsample_backward(UpsampleLayer* layer, float* output_gradient, int batch_s
 void decoder_backward(Decoder* decoder, float* input, float* output_gradient) {
     int batch_size = decoder->batch_size;
     
-    // Backward through TransConv2
-    transpose_conv_backward(decoder->tconv2, decoder->upsample2->output, output_gradient, batch_size);
+    // Backward through Conv3
+    conv_backward(decoder->conv3, decoder->upsample2->output, output_gradient, batch_size);
     
     // Backward through Upsample2
-    upsample_backward(decoder->upsample2, decoder->tconv2->input_gradients, batch_size);
+    upsample_backward(decoder->upsample2, decoder->conv3->input_gradients, batch_size);
     
-    // Backward through ReLU
-    relu_backward(decoder->tconv1->output, decoder->upsample2->input_gradients,
-                  decoder->tconv1_relu_grad, batch_size * 64 * 16 * 16);
+    // Backward through ReLU for Conv2
+    relu_backward(decoder->conv2->output, decoder->upsample2->input_gradients,
+                  decoder->conv2_relu_grad, batch_size * 256 * 16 * 16);
     
-    // Backward through TransConv1
-    transpose_conv_backward(decoder->tconv1, decoder->upsample1->output, decoder->tconv1_relu_grad, batch_size);
+    // Backward through Conv2
+    conv_backward(decoder->conv2, decoder->upsample1->output, decoder->conv2_relu_grad, batch_size);
     
     // Backward through Upsample1
-    upsample_backward(decoder->upsample1, decoder->tconv1->input_gradients, batch_size);
+    upsample_backward(decoder->upsample1, decoder->conv2->input_gradients, batch_size);
+    
+    // Backward through ReLU for Conv1
+    relu_backward(decoder->conv1->output, decoder->upsample1->input_gradients,
+                  decoder->conv1_relu_grad, batch_size * 128 * 8 * 8);
+    
+    // Backward through Conv1
+    conv_backward(decoder->conv1, input, decoder->conv1_relu_grad, batch_size);
 }
 
 // Update decoder weights using gradients (SGD)
 void update_decoder_weights(Decoder* decoder, float learning_rate) {
-    // Update TransConv1
-    int tconv1_weight_size = 64 * 128 * 3 * 3;
-    for (int i = 0; i < tconv1_weight_size; i++) {
-        decoder->tconv1->weights[i] -= learning_rate * decoder->tconv1->weight_gradients[i];
+    // Update Conv1: 128 * 128 * 3 * 3
+    int conv1_weight_size = 128 * 128 * 3 * 3;
+    for (int i = 0; i < conv1_weight_size; i++) {
+        decoder->conv1->weights[i] -= learning_rate * decoder->conv1->weight_gradients[i];
     }
-    for (int i = 0; i < 64; i++) {
-        decoder->tconv1->bias[i] -= learning_rate * decoder->tconv1->bias_gradients[i];
+    for (int i = 0; i < 128; i++) {
+        decoder->conv1->bias[i] -= learning_rate * decoder->conv1->bias_gradients[i];
     }
     
-    // Update TransConv2
-    int tconv2_weight_size = 3 * 64 * 3 * 3;
-    for (int i = 0; i < tconv2_weight_size; i++) {
-        decoder->tconv2->weights[i] -= learning_rate * decoder->tconv2->weight_gradients[i];
+    // Update Conv2: 256 * 128 * 3 * 3
+    int conv2_weight_size = 256 * 128 * 3 * 3;
+    for (int i = 0; i < conv2_weight_size; i++) {
+        decoder->conv2->weights[i] -= learning_rate * decoder->conv2->weight_gradients[i];
+    }
+    for (int i = 0; i < 256; i++) {
+        decoder->conv2->bias[i] -= learning_rate * decoder->conv2->bias_gradients[i];
+    }
+    
+    // Update Conv3: 3 * 256 * 3 * 3
+    int conv3_weight_size = 3 * 256 * 3 * 3;
+    for (int i = 0; i < conv3_weight_size; i++) {
+        decoder->conv3->weights[i] -= learning_rate * decoder->conv3->weight_gradients[i];
     }
     for (int i = 0; i < 3; i++) {
-        decoder->tconv2->bias[i] -= learning_rate * decoder->tconv2->bias_gradients[i];
+        decoder->conv3->bias[i] -= learning_rate * decoder->conv3->bias_gradients[i];
     }
 }

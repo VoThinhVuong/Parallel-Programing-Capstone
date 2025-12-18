@@ -11,7 +11,6 @@ void maxpool_backward(MaxPoolLayer* layer, float* output_gradient, int batch_siz
 void conv_backward(ConvLayer* layer, float* input, float* output_gradient, int batch_size);
 
 // Decoder backward pass functions
-void transpose_conv_backward(TransposeConvLayer* layer, float* input, float* output_gradient, int batch_size);
 void upsample_backward(UpsampleLayer* layer, float* output_gradient, int batch_size);
 void decoder_backward(Decoder* decoder, float* input, float* output_gradient);
 

@@ -41,17 +41,10 @@ void update_classifier_weights(CNN* cnn, float learning_rate);
 void update_encoder_weights(CNN* cnn, float learning_rate);
 
 // Decoder backward pass
-__global__ void transpose_conv_backward_kernel(float* input, float* weights, float* output_gradient,
-                                              float* weight_gradients, float* bias_gradients, float* input_gradients,
-                                              int batch_size, int input_channels, int output_channels,
-                                              int input_size, int output_size, int kernel_size,
-                                              int stride, int padding);
-
 __global__ void upsample_backward_kernel(float* output_gradient, float* input_gradients,
                                         int batch_size, int channels,
                                         int input_size, int output_size, int scale);
 
-void transpose_conv_backward(TransposeConvLayer* layer, float* d_input, float* d_output_gradient, int batch_size);
 void upsample_backward(UpsampleLayer* layer, float* d_output_gradient, int batch_size);
 void decoder_backward(Decoder* decoder, float* d_output_gradient, float* d_input, int batch_size);
 void update_decoder_weights(Decoder* decoder, float learning_rate);
