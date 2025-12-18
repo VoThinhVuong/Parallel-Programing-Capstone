@@ -174,8 +174,8 @@ void train_classifier(LogisticRegression* clf, float* features, uint8_t* labels,
 int main(int argc, char** argv) {
     const char* data_dir = "../cifar-10-batches-bin";
     const char* encoder_weights_file = "encoder_weights.bin";
-    const char* train_features_file = "../extracted_features/train_features_v3.bin";
-    const char* test_features_file = "../extracted_features/test_features_v3.bin";
+    const char* train_features_file = "../extracted_features/train_features_v4.bin";
+    const char* test_features_file = "../extracted_features/test_features_v4.bin";
     const int batch_size = 64;
     
     printf("=== CIFAR-10 Feature Extraction & Classification ===\n\n");
