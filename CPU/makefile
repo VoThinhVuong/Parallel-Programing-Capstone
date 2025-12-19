@@ -29,8 +29,8 @@ FEATURE_OBJECTS = $(FEATURE_SOURCES:.c=.o)
 all: $(EXECUTABLE) $(FEATURE_EXTRACTOR)
 
 # Link main program
-$(EXECUTABLE): main.o data_loader.o cnn.o forward.o backward.o
-	$(CC) main.o data_loader.o cnn.o forward.o backward.o -o $@ $(LDFLAGS)
+$(EXECUTABLE): main.o data_loader.o cnn.o forward.o backward.o feature_extractor.o
+	$(CC) main.o data_loader.o cnn.o forward.o backward.o feature_extractor.o -o $@ $(LDFLAGS)
 	@echo "Build complete: $(EXECUTABLE)"
 
 # Link feature extractor
