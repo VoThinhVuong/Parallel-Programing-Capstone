@@ -62,13 +62,8 @@ __global__ void maxpool_backward_kernel(float* output_gradient, int* max_indices
                                        int batch_size, int channels, int input_size, int output_size) {
     int b = blockIdx.z;
     int c = blockIdx.y;
-
-    int num_w_blocks = (output_size + blockDim.y - 1) / blockDim.y;
-    int oh_block = blockIdx.x / num_w_blocks;
-    int ow_block = blockIdx.x % num_w_blocks;
-
-    int oh = oh_block * blockDim.x + threadIdx.x;
-    int ow = ow_block * blockDim.y + threadIdx.y;
+    int oh = blockIdx.x * blockDim.x + threadIdx.x;
+    int ow = threadIdx.y;
     
     if (b >= batch_size || c >= channels || oh >= output_size || ow >= output_size) {
         return;
@@ -89,13 +84,8 @@ __global__ void conv_backward_kernel(float* input, float* weights, float* output
                                     int input_size, int output_size, int kernel_size,
                                     int stride, int padding) {
     int oc = blockIdx.y;
-
-    int num_w_blocks = (output_size + blockDim.y - 1) / blockDim.y;
-    int oh_block = blockIdx.x / num_w_blocks;
-    int ow_block = blockIdx.x % num_w_blocks;
-
-    int oh = oh_block * blockDim.x + threadIdx.x;
-    int ow = ow_block * blockDim.y + threadIdx.y;
+    int oh = blockIdx.x * blockDim.x + threadIdx.x;
+    int ow = threadIdx.y;
     
     if (oc >= output_channels || oh >= output_size || ow >= output_size) {
         return;
@@ -202,9 +192,7 @@ void maxpool_backward(MaxPoolLayer* layer, float* d_output_gradient, int batch_s
     clear_gradients_kernel<<<(input_total_size + threads - 1) / threads, threads>>>(layer->d_input_gradients, input_total_size);
     
     dim3 block(8, 8);
-    int grid_h = (layer->output_size + block.x - 1) / block.x;
-    int grid_w = (layer->output_size + block.y - 1) / block.y;
-    dim3 grid(grid_h * grid_w, layer->input_channels, batch_size);
+    dim3 grid((layer->output_size + block.x - 1) / block.x, layer->input_channels, batch_size);
     
     maxpool_backward_kernel<<<grid, block>>>(d_output_gradient, layer->d_max_indices, layer->d_input_gradients,
                                             batch_size, layer->input_channels,
@@ -224,9 +212,7 @@ void conv_backward(ConvLayer* layer, float* d_input, float* d_output_gradient, i
     
     // Compute gradients
     dim3 block(8, 8);
-    int grid_h = (layer->output_size + block.x - 1) / block.x;
-    int grid_w = (layer->output_size + block.y - 1) / block.y;
-    dim3 grid(grid_h * grid_w, layer->output_channels);
+    dim3 grid((layer->output_size + block.x - 1) / block.x, layer->output_channels);
     
     conv_backward_kernel<<<grid, block>>>(
         d_input, layer->d_weights, d_output_gradient,
