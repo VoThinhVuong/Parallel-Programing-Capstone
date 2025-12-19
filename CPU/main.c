@@ -2,6 +2,7 @@
 #include "cnn.h"
 #include "forward.h"
 #include "backward.h"
+#include "feature_extractor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -396,6 +397,15 @@ int main(int argc, char** argv) {
     printf("=== Training Complete ===\n");
     printf("Total training time: %.2f seconds\n", total_training_time);
     printf("Average time per epoch: %.2f seconds\n", total_training_time / num_epochs);
+    
+    // Save encoder weights for feature extraction
+    printf("\nSaving encoder weights...\n");
+    if (save_encoder_weights(cnn, "encoder_weights.bin") == 0) {
+        printf("Encoder weights saved successfully to encoder_weights.bin\n");
+        printf("You can now run the feature extractor with these weights.\n");
+    } else {
+        fprintf(stderr, "Warning: Failed to save encoder weights\n");
+    }
     
     // Cleanup
     free_cnn(cnn);
