@@ -127,6 +127,7 @@ CNN* create_cnn(int batch_size) {
     if (!cnn) return NULL;
     
     cnn->batch_size = batch_size;
+    cnn->decoder = NULL;
     
     // Create layers
     cnn->conv1 = create_conv_layer(INPUT_CHANNELS, CONV1_FILTERS, CONV1_KERNEL_SIZE,
