@@ -1,11 +1,3 @@
-"""
-Step 5: Evaluate SVM using cuML (GPU-accelerated)
-- Predict on test_features using trained SVM
-- Calculate accuracy and confusion matrix
-- Expected accuracy: 60-65%
-- Compare with baseline methods
-"""
-
 import numpy as np
 import cupy as cp
 import cudf
@@ -19,6 +11,94 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
+
+
+# 10 fixed sample ids to display after evaluation.
+DEFAULT_SAMPLE_IDS = [0, 123, 456, 789, 1024, 2048, 3072, 4096, 5120, 9000]
+
+
+def load_cifar10_test_batch(cifar_bin_dir):
+    """Load CIFAR-10 test images + labels from binary file.
+
+    Expects `test_batch.bin` in `cifar_bin_dir`.
+    Returns:
+        images: uint8 array (10000, 32, 32, 3)
+        labels: int32 array (10000,)
+    """
+    test_batch_path = os.path.join(cifar_bin_dir, 'test_batch.bin')
+    if not os.path.exists(test_batch_path):
+        raise FileNotFoundError(f"Missing CIFAR-10 file: {test_batch_path}")
+
+    record_size = 1 + 32 * 32 * 3  # label + image
+    file_size = os.path.getsize(test_batch_path)
+    if file_size % record_size != 0:
+        raise ValueError(
+            f"Unexpected CIFAR-10 test_batch.bin size: {file_size} bytes; "
+            f"expected multiple of {record_size}"
+        )
+
+    num_samples = file_size // record_size
+
+    with open(test_batch_path, 'rb') as f:
+        raw = np.frombuffer(f.read(), dtype=np.uint8)
+
+    raw = raw.reshape(num_samples, record_size)
+    labels = raw[:, 0].astype(np.int32)
+    images_flat = raw[:, 1:]
+    images = images_flat.reshape(num_samples, 3, 32, 32).transpose(0, 2, 3, 1)
+    return images, labels
+
+
+def plot_sample_predictions_grid(images, sample_ids, predictions, labels,
+                                 class_names, output_path=None, show=True,
+                                 figsize=(11, 5.2), dpi=150):
+    """Plot a 2x5 grid (10 images) with pred/label under each image."""
+    valid_ids = [i for i in sample_ids if 0 <= i < len(labels)]
+    if len(valid_ids) == 0:
+        raise ValueError("No valid sample ids to plot (all ids out of range).")
+
+    # Force exactly 10 slots, but allow fewer if not available.
+    valid_ids = valid_ids[:10]
+    n = len(valid_ids)
+    ncols = 5
+    nrows = int(np.ceil(n / ncols))
+
+    # CIFAR-10 images are tiny (32x32). Keep the overall figure reasonably small
+    # so they are not over-enlarged (which can look blurry/low-res).
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, dpi=dpi)
+    axes = np.array(axes).reshape(nrows, ncols)
+
+    for ax in axes.ravel():
+        ax.axis('off')
+
+    for idx, sample_id in enumerate(valid_ids):
+        r, c = divmod(idx, ncols)
+        ax = axes[r, c]
+        # CIFAR-10 images are 32x32; nearest neighbor avoids blur when scaled.
+        ax.imshow(images[sample_id], interpolation='nearest', resample=False)
+        ax.axis('off')
+
+        pred = int(predictions[sample_id])
+        true = int(labels[sample_id])
+        pred_name = class_names[pred] if 0 <= pred < len(class_names) else str(pred)
+        true_name = class_names[true] if 0 <= true < len(class_names) else str(true)
+
+        # Put text under the image using axes coordinates so it won't get cropped.
+        ax.text(0.5, -0.08, f"pred: {pred_name}\nlabel: {true_name}",
+            transform=ax.transAxes, ha='center', va='top', fontsize=10)
+        ax.text(0.5, 1.02, f"id: {sample_id}",
+            transform=ax.transAxes, ha='center', va='bottom', fontsize=10)
+
+    # Leave extra space for below-image text.
+    plt.subplots_adjust(hspace=0.55, wspace=0.05, bottom=0.08, top=0.92)
+    if output_path:
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"\n✓ Sample predictions grid saved to: {output_path}")
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def load_features(features_path, labels_path):
@@ -245,6 +325,18 @@ def main():
     parser.add_argument('--output-results', type=str,
                         default='./models/evaluation_results_cuml.txt',
                         help='Path to save evaluation results')
+
+    # Sample visualization
+    parser.add_argument('--cifar-bin-dir', type=str,
+                        default='../cifar-10-batches-bin',
+                        help='Path to CIFAR-10 binary folder containing test_batch.bin')
+    parser.add_argument('--sample-ids', type=int, nargs='*', default=None,
+                        help='Sample IDs to visualize (default: built-in 10 IDs)')
+    parser.add_argument('--output-samples', type=str,
+                        default='./models/sample_predictions_grid.png',
+                        help='Path to save the 10-sample predictions grid')
+    parser.add_argument('--no-samples', action='store_true',
+                        help='Skip plotting 10 sample images with pred/label')
     
     # Optional subset for testing
     parser.add_argument('--subset', type=int, default=None,
@@ -265,6 +357,9 @@ def main():
     print(f"  Model: {args.model}")
     if args.subset:
         print(f"  Subset: {args.subset} samples (testing mode)")
+    if not args.no_samples:
+        sample_ids_to_show = args.sample_ids if args.sample_ids is not None else DEFAULT_SAMPLE_IDS
+        print(f"  Sample IDs (10): {sample_ids_to_show}")
     print()
     
     try:
@@ -284,6 +379,48 @@ def main():
         predictions, accuracy, conf_matrix, prediction_time = evaluate_svm_cuml(
             model, test_features, test_labels
         )
+
+        # Show 10 sample images (5 per row) with pred + label underneath
+        if not args.no_samples:
+            print("\n" + "="*60)
+            print("Sample Predictions (10 images, 5 per row)")
+            print("="*60)
+            sample_ids_to_show = args.sample_ids if args.sample_ids is not None else DEFAULT_SAMPLE_IDS
+
+            # If subset is used, some IDs may be out of range.
+            if args.subset is not None:
+                in_range = [i for i in sample_ids_to_show if 0 <= i < len(test_labels)]
+                if len(in_range) < len(sample_ids_to_show):
+                    print(
+                        f"⚠️  Subset mode: some sample IDs are out of range (0..{len(test_labels)-1}); "
+                        f"plotting valid IDs only: {in_range}"
+                    )
+                sample_ids_to_show = in_range
+
+            class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                           'dog', 'frog', 'horse', 'ship', 'truck']
+            cifar_images, cifar_labels = load_cifar10_test_batch(args.cifar_bin_dir)
+
+            # Prefer labels from CIFAR test_batch.bin if the provided label file doesn't match.
+            labels_for_plot = test_labels
+            try:
+                check_n = min(1000, len(test_labels), len(cifar_labels))
+                if check_n > 0 and not np.array_equal(test_labels[:check_n], cifar_labels[:check_n]):
+                    print("⚠️  Label file does not match CIFAR test_batch.bin ordering; using CIFAR labels for plotting.")
+                    labels_for_plot = cifar_labels[:len(test_labels)]
+            except Exception:
+                pass
+
+            # For full test set, indices match CIFAR test_batch ordering.
+            plot_sample_predictions_grid(
+                images=cifar_images,
+                sample_ids=sample_ids_to_show,
+                predictions=predictions,
+                labels=labels_for_plot,
+                class_names=class_names,
+                output_path=args.output_samples,
+                show=True,
+            )
         
         # Print results
         print_evaluation_results(test_labels, predictions, accuracy, conf_matrix)
