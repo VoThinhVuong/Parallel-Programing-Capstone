@@ -5,15 +5,15 @@
 #include <float.h>
 #include <math.h>
 
-// Convolution kernel with shared memory for input tile
+
 __global__ void conv_forward_kernel(float* input, float* weights, float* bias, float* output,
                                    int batch_size, int input_channels, int output_channels,
                                    int input_size, int output_size, int kernel_size,
                                    int stride, int padding) {
-    int b = blockIdx.z;  // batch index
-    int oc = blockIdx.y;  // output channel
-    int oh = blockIdx.x * blockDim.x + threadIdx.x;  // output height
-    int ow = threadIdx.y;  // output width
+    int b = blockIdx.z;  
+    int oc = blockIdx.y;  
+    int oh = blockIdx.x * blockDim.x + threadIdx.x;  
+    int ow = threadIdx.y;  
     
     if (b >= batch_size || oc >= output_channels || oh >= output_size || ow >= output_size) {
         return;
@@ -21,16 +21,16 @@ __global__ void conv_forward_kernel(float* input, float* weights, float* bias, f
     
     float sum = bias[oc];
     
-    // Shared memory for input tile (per input channel)
-    // Size: (blockDim.x + kernel_size - 1) x (blockDim.y + kernel_size - 1)
+    
+    
     extern __shared__ float shared_input[];
     
     int tile_height = blockDim.x + kernel_size - 1;
     int tile_width = blockDim.y + kernel_size - 1;
     
-    // Compute convolution
+    
     for (int ic = 0; ic < input_channels; ic++) {
-        // Collaboratively load input tile into shared memory
+        
         int load_h = (tile_height + blockDim.x - 1) / blockDim.x;
         int load_w = (tile_width + blockDim.y - 1) / blockDim.y;
         
@@ -49,7 +49,7 @@ __global__ void conv_forward_kernel(float* input, float* weights, float* bias, f
                                        ih * input_size + iw;
                         shared_input[sh * tile_width + sw] = input[input_idx];
                     } else {
-                        shared_input[sh * tile_width + sw] = 0.0f;  // padding
+                        shared_input[sh * tile_width + sw] = 0.0f;  
                     }
                 }
             }
@@ -57,7 +57,7 @@ __global__ void conv_forward_kernel(float* input, float* weights, float* bias, f
         
         __syncthreads();
         
-        // Compute convolution using shared memory
+        
         for (int kh = 0; kh < kernel_size; kh++) {
             for (int kw = 0; kw < kernel_size; kw++) {
                 int sh = threadIdx.x + kh;
@@ -80,7 +80,7 @@ __global__ void conv_forward_kernel(float* input, float* weights, float* bias, f
     output[output_idx] = sum;
 }
 
-// ReLU activation kernel (no shared memory optimization needed)
+
 __global__ void relu_forward_kernel(float* input, float* output, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -88,26 +88,26 @@ __global__ void relu_forward_kernel(float* input, float* output, int size) {
     }
 }
 
-// Max pooling kernel with shared memory for input tile
+
 __global__ void maxpool_forward_kernel(float* input, float* output, int* max_indices,
                                       int batch_size, int channels, int input_size,
                                       int output_size, int pool_size, int stride) {
-    int b = blockIdx.z;  // batch index
-    int c = blockIdx.y;  // channel
-    int oh = blockIdx.x * blockDim.x + threadIdx.x;  // output height
-    int ow = threadIdx.y;  // output width
+    int b = blockIdx.z;  
+    int c = blockIdx.y;  
+    int oh = blockIdx.x * blockDim.x + threadIdx.x;  
+    int ow = threadIdx.y;  
     
     if (b >= batch_size || c >= channels || oh >= output_size || ow >= output_size) {
         return;
     }
     
-    // Shared memory for input tile
+    
     extern __shared__ float shared_pool[];
     
     int tile_height = blockDim.x * stride + pool_size - stride;
     int tile_width = blockDim.y * stride + pool_size - stride;
     
-    // Collaboratively load input tile
+    
     int load_h = (tile_height + blockDim.x - 1) / blockDim.x;
     int load_w = (tile_width + blockDim.y - 1) / blockDim.y;
     
@@ -134,7 +134,7 @@ __global__ void maxpool_forward_kernel(float* input, float* output, int* max_ind
     
     __syncthreads();
     
-    // Find max in pool region using shared memory
+    
     float max_val = -FLT_MAX;
     int max_idx = 0;
     
@@ -146,7 +146,7 @@ __global__ void maxpool_forward_kernel(float* input, float* output, int* max_ind
             float val = shared_pool[sh * tile_width + sw];
             if (val > max_val) {
                 max_val = val;
-                // Compute global index for backprop
+                
                 int ih = oh * stride + ph;
                 int iw = ow * stride + pw;
                 max_idx = b * (channels * input_size * input_size) +
@@ -163,32 +163,32 @@ __global__ void maxpool_forward_kernel(float* input, float* output, int* max_ind
     max_indices[output_idx] = max_idx;
 }
 
-// Fully connected kernel with shared memory for weights and input
+
 __global__ void fc_forward_kernel(float* input, float* weights, float* bias, float* output,
                                  int batch_size, int input_size, int output_size) {
-    // Use shared memory for input vector
+    
     extern __shared__ float shared_input_fc[];
     
-    int b = blockIdx.y;  // batch index
-    int o = blockIdx.x * blockDim.x + threadIdx.x;  // output neuron
+    int b = blockIdx.y;  
+    int o = blockIdx.x * blockDim.x + threadIdx.x;  
     int tid = threadIdx.x;
     
     if (b >= batch_size) {
         return;
     }
     
-    // Collaboratively load input into shared memory
+    
     for (int i = tid; i < input_size; i += blockDim.x) {
         shared_input_fc[i] = input[b * input_size + i];
     }
     
     __syncthreads();
     
-    // Compute dot product
+    
     if (o < output_size) {
         float sum = bias[o];
         
-        // Use shared input
+        
         for (int i = 0; i < input_size; i++) {
             sum += shared_input_fc[i] * weights[o * input_size + i];
         }
@@ -197,7 +197,7 @@ __global__ void fc_forward_kernel(float* input, float* weights, float* bias, flo
     }
 }
 
-// Softmax kernel with shared memory for reduction
+
 __global__ void softmax_forward_kernel(float* input, float* output, int batch_size, int num_classes) {
     extern __shared__ float shared_softmax[];
     
@@ -208,7 +208,7 @@ __global__ void softmax_forward_kernel(float* input, float* output, int batch_si
         return;
     }
     
-    // Find max using parallel reduction in shared memory
+    
     float thread_max = -FLT_MAX;
     for (int i = tid; i < num_classes; i += blockDim.x) {
         if (input[b * num_classes + i] > thread_max) {
@@ -219,7 +219,7 @@ __global__ void softmax_forward_kernel(float* input, float* output, int batch_si
     
     __syncthreads();
     
-    // Reduce to find global max
+    
     for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
         if (tid < stride) {
             if (shared_softmax[tid + stride] > shared_softmax[tid]) {
@@ -232,7 +232,7 @@ __global__ void softmax_forward_kernel(float* input, float* output, int batch_si
     float max_val = shared_softmax[0];
     __syncthreads();
     
-    // Compute exp and sum using shared memory
+    
     float thread_sum = 0.0f;
     for (int i = tid; i < num_classes; i += blockDim.x) {
         float exp_val = expf(input[b * num_classes + i] - max_val);
@@ -243,7 +243,7 @@ __global__ void softmax_forward_kernel(float* input, float* output, int batch_si
     
     __syncthreads();
     
-    // Reduce to find total sum
+    
     for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
         if (tid < stride) {
             shared_softmax[tid] += shared_softmax[tid + stride];
@@ -254,18 +254,18 @@ __global__ void softmax_forward_kernel(float* input, float* output, int batch_si
     float sum = shared_softmax[0];
     __syncthreads();
     
-    // Normalize
+    
     for (int i = tid; i < num_classes; i += blockDim.x) {
         output[b * num_classes + i] /= sum;
     }
 }
 
-// Host wrapper functions
+
 void conv_forward(ConvLayer* layer, float* d_input, int batch_size) {
     dim3 block(8, 8);
     dim3 grid((layer->output_size + block.x - 1) / block.x, layer->output_channels, batch_size);
     
-    // Calculate shared memory size
+    
     int tile_height = block.x + layer->kernel_size - 1;
     int tile_width = block.y + layer->kernel_size - 1;
     int shared_mem_size = tile_height * tile_width * sizeof(float);
@@ -290,7 +290,7 @@ void maxpool_forward(MaxPoolLayer* layer, float* d_input, int batch_size) {
     dim3 block(8, 8);
     dim3 grid((layer->output_size + block.x - 1) / block.x, layer->input_channels, batch_size);
     
-    // Calculate shared memory size
+    
     int tile_height = block.x * layer->stride + layer->pool_size - layer->stride;
     int tile_width = block.y * layer->stride + layer->pool_size - layer->stride;
     int shared_mem_size = tile_height * tile_width * sizeof(float);
@@ -308,7 +308,7 @@ void fc_forward(FCLayer* layer, float* d_input, int batch_size) {
     int blocks = (layer->output_size + threads - 1) / threads;
     dim3 grid(blocks, batch_size);
     
-    // Shared memory for input vector
+    
     int shared_mem_size = layer->input_size * sizeof(float);
     
     fc_forward_kernel<<<grid, threads, shared_mem_size>>>(
@@ -321,7 +321,7 @@ void softmax_forward(float* d_input, float* d_output, int batch_size, int num_cl
     int threads = 256;
     int blocks = batch_size;
     
-    // Shared memory for reduction
+    
     int shared_mem_size = threads * sizeof(float);
     
     softmax_forward_kernel<<<blocks, threads, shared_mem_size>>>(
@@ -329,33 +329,33 @@ void softmax_forward(float* d_input, float* d_output, int batch_size, int num_cl
     CUDA_CHECK(cudaGetLastError());
 }
 
-// Complete forward pass through the network
+
 void forward_pass(CNN* cnn, float* d_input) {
     int batch_size = cnn->batch_size;
     
-    // Conv1 + ReLU
+    
     conv_forward(cnn->conv1, d_input, batch_size);
     relu_forward(cnn->conv1->d_output, cnn->d_conv1_relu,
                  batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE);
     
-    // Pool1
+    
     maxpool_forward(cnn->pool1, cnn->d_conv1_relu, batch_size);
     
-    // Conv2 + ReLU
+    
     conv_forward(cnn->conv2, cnn->pool1->d_output, batch_size);
     relu_forward(cnn->conv2->d_output, cnn->d_conv2_relu,
                  batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE);
     
-    // Pool2
+    
     maxpool_forward(cnn->pool2, cnn->d_conv2_relu, batch_size);
     
-    // FC1 + ReLU
+    
     fc_forward(cnn->fc1, cnn->pool2->d_output, batch_size);
     relu_forward(cnn->fc1->d_output, cnn->d_fc1_relu, batch_size * FC1_OUTPUT_SIZE);
     
-    // FC2
+    
     fc_forward(cnn->fc2, cnn->d_fc1_relu, batch_size);
     
-    // Softmax
+    
     softmax_forward(cnn->fc2->d_output, cnn->d_output, batch_size, FC2_OUTPUT_SIZE);
 }

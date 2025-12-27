@@ -2,7 +2,7 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 
-// Softmax + Cross-Entropy backward kernel (combined for efficiency)
+
 __global__ void softmax_cross_entropy_backward_kernel(float* output, uint8_t* labels, float* gradient,
                                                      int batch_size, int num_classes) {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
@@ -17,14 +17,14 @@ __global__ void softmax_cross_entropy_backward_kernel(float* output, uint8_t* la
     if (i == labels[b]) {
         gradient[idx] -= 1.0f;
     }
-    gradient[idx] /= batch_size;  // Average over batch
+    gradient[idx] /= batch_size;  
 }
 
-// ------------------------------
-// OPTIMIZED FC backward kernels
-// ------------------------------
 
-// Bias gradient: bias_grad[o] = sum_b out_grad[b,o]
+
+
+
+
 __global__ void fc_bias_grad_kernel(const float* __restrict__ output_gradient,
                                    float* __restrict__ bias_gradients,
                                    int batch_size, int output_size) {
@@ -38,8 +38,8 @@ __global__ void fc_bias_grad_kernel(const float* __restrict__ output_gradient,
     bias_gradients[o] = sum;
 }
 
-// Weight gradient: w_grad[o,i] = sum_b out_grad[b,o] * input[b,i]
-// One thread computes one (o,i) pair; reduction over batch happens in registers.
+
+
 __global__ void fc_weight_grad_kernel(const float* __restrict__ input,
                                      const float* __restrict__ output_gradient,
                                      float* __restrict__ weight_gradients,
@@ -55,8 +55,8 @@ __global__ void fc_weight_grad_kernel(const float* __restrict__ input,
     weight_gradients[o * input_size + i] = sum;
 }
 
-// Input gradient: in_grad[b,i] = sum_o out_grad[b,o] * weights[o,i]
-// One block per (batch b), threads over input i.
+
+
 __global__ void fc_input_grad_kernel(const float* __restrict__ weights,
                                     const float* __restrict__ output_gradient,
                                     float* __restrict__ input_gradients,
@@ -66,14 +66,14 @@ __global__ void fc_input_grad_kernel(const float* __restrict__ weights,
     if (b >= batch_size || i >= input_size) return;
 
     float sum = 0.0f;
-    // Iterate over output neurons
+    
     for (int o = 0; o < output_size; o++) {
         sum += output_gradient[b * output_size + o] * weights[o * input_size + i];
     }
     input_gradients[b * input_size + i] = sum;
 }
 
-// ReLU backward kernel (unchanged - already atomic-free)
+
 __global__ void relu_backward_kernel(float* input, float* output_gradient, float* input_gradient, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -81,8 +81,8 @@ __global__ void relu_backward_kernel(float* input, float* output_gradient, float
     }
 }
 
-// Max pooling backward kernel - ATOMIC-FREE using output-centric parallelization
-// Each output position directly writes to its corresponding input position (no scatter conflicts)
+
+
 __global__ void maxpool_backward_kernel(float* output_gradient, int* max_indices, float* input_gradients,
                                        int batch_size, int channels, int output_size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -92,13 +92,13 @@ __global__ void maxpool_backward_kernel(float* output_gradient, int* max_indices
         return;
     }
     
-    // Direct write - each output gradient goes to exactly one input position
+    
     int max_idx = max_indices[idx];
     input_gradients[max_idx] = output_gradient[idx];
 }
 
-// Convolution backward kernel - ATOMIC-FREE VERSION
-// Strategy 1: Weight gradients - one thread per weight element, accumulate over batch/spatial
+
+
 __global__ void conv_backward_weights_kernel(float* input, float* output_gradient,
                                              float* weight_gradients, float* bias_gradients,
                                              int batch_size, int input_channels, int output_channels,
@@ -120,7 +120,7 @@ __global__ void conv_backward_weights_kernel(float* input, float* output_gradien
     float weight_grad = 0.0f;
     float bias_grad = 0.0f;
     
-    // Accumulate over batch and spatial dimensions
+    
     for (int b = 0; b < batch_size; b++) {
         for (int oh = 0; oh < output_size; oh++) {
             for (int ow = 0; ow < output_size; ow++) {
@@ -137,7 +137,7 @@ __global__ void conv_backward_weights_kernel(float* input, float* output_gradien
                     
                     weight_grad += output_gradient[output_idx] * input[input_idx];
                     
-                    // Only first kernel position accumulates bias
+                    
                     if (ic == 0 && kh == 0 && kw == 0) {
                         bias_grad += output_gradient[output_idx];
                     }
@@ -148,13 +148,13 @@ __global__ void conv_backward_weights_kernel(float* input, float* output_gradien
     
     weight_gradients[weight_idx] = weight_grad;
     
-    // Only one thread writes bias
+    
     if (ic == 0 && kh == 0 && kw == 0) {
         bias_gradients[oc] = bias_grad;
     }
 }
 
-// Strategy 2: Input gradients - one thread per input element, accumulate over filters/kernel
+
 __global__ void conv_backward_input_kernel(float* output_gradient, float* weights,
                                           float* input_gradients,
                                           int batch_size, int input_channels, int output_channels,
@@ -178,15 +178,15 @@ __global__ void conv_backward_input_kernel(float* output_gradient, float* weight
     
     float input_grad = 0.0f;
     
-    // Accumulate contributions from all output positions this input affects
+    
     for (int oc = 0; oc < output_channels; oc++) {
         for (int kh = 0; kh < kernel_size; kh++) {
             for (int kw = 0; kw < kernel_size; kw++) {
-                // Find output position that this input contributes to
+                
                 int oh = (ih + padding - kh) / stride;
                 int ow = (iw + padding - kw) / stride;
                 
-                // Check if this is a valid output position
+                
                 if (oh >= 0 && oh < output_size && ow >= 0 && ow < output_size &&
                     (ih + padding - kh) % stride == 0 && (iw + padding - kw) % stride == 0) {
                     
@@ -206,7 +206,7 @@ __global__ void conv_backward_input_kernel(float* output_gradient, float* weight
     input_gradients[input_idx] = input_grad;
 }
 
-// Weight update kernel (unchanged - already atomic-free)
+
 __global__ void update_weights_kernel(float* weights, float* gradients, float learning_rate, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -214,7 +214,7 @@ __global__ void update_weights_kernel(float* weights, float* gradients, float le
     }
 }
 
-// Clear gradient kernel (unchanged)
+
 __global__ void clear_gradients_kernel(float* gradients, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -229,7 +229,7 @@ __global__ void accumulate_gradients_kernel(float* dst, const float* src, int si
     }
 }
 
-// Host wrapper functions
+
 void softmax_cross_entropy_backward(float* d_output, uint8_t* d_labels, float* d_gradient,
                                     int batch_size, int num_classes) {
     dim3 block(16, 16);
@@ -241,7 +241,7 @@ void softmax_cross_entropy_backward(float* d_output, uint8_t* d_labels, float* d
 }
 
 void fc_backward(FCLayer* layer, float* d_input, float* d_output_gradient, int batch_size) {
-    // Clear gradients first
+    
     int weight_size = layer->output_size * layer->input_size;
     int threads = 256;
     
@@ -249,14 +249,14 @@ void fc_backward(FCLayer* layer, float* d_input, float* d_output_gradient, int b
     clear_gradients_kernel<<<(layer->output_size + threads - 1) / threads, threads>>>(layer->d_bias_gradients, layer->output_size);
     clear_gradients_kernel<<<(batch_size * layer->input_size + threads - 1) / threads, threads>>>(layer->d_input_gradients, batch_size * layer->input_size);
     
-    // Compute gradients (optimized, no atomics)
-    // 1) bias gradients
+    
+    
     int bias_blocks = (layer->output_size + threads - 1) / threads;
     fc_bias_grad_kernel<<<bias_blocks, threads>>>(
         d_output_gradient, layer->d_bias_gradients, batch_size, layer->output_size);
     CUDA_CHECK(cudaGetLastError());
 
-    // 2) weight gradients
+    
     int wg_blocks_x = (layer->input_size + threads - 1) / threads;
     dim3 wg_grid(wg_blocks_x, layer->output_size);
     fc_weight_grad_kernel<<<wg_grid, threads>>>(
@@ -264,7 +264,7 @@ void fc_backward(FCLayer* layer, float* d_input, float* d_output_gradient, int b
         batch_size, layer->input_size, layer->output_size);
     CUDA_CHECK(cudaGetLastError());
 
-    // 3) input gradients
+    
     int ig_blocks_x = (layer->input_size + threads - 1) / threads;
     dim3 ig_grid(ig_blocks_x, batch_size);
     fc_input_grad_kernel<<<ig_grid, threads>>>(
@@ -282,13 +282,13 @@ void relu_backward(float* d_input, float* d_output_gradient, float* d_input_grad
 }
 
 void maxpool_backward(MaxPoolLayer* layer, float* d_output_gradient, int batch_size) {
-    // Clear input gradients first
+    
     int input_total_size = batch_size * layer->input_channels * layer->input_size * layer->input_size;
     int threads = 256;
     clear_gradients_kernel<<<(input_total_size + threads - 1) / threads, threads>>>(
         layer->d_input_gradients, input_total_size);
     
-    // Atomic-free backward pass - direct scatter
+    
     int output_total_size = batch_size * layer->input_channels * layer->output_size * layer->output_size;
     maxpool_backward_kernel<<<(output_total_size + threads - 1) / threads, threads>>>(
         d_output_gradient, layer->d_max_indices, layer->d_input_gradients,
@@ -297,7 +297,7 @@ void maxpool_backward(MaxPoolLayer* layer, float* d_output_gradient, int batch_s
 }
 
 void conv_backward(ConvLayer* layer, float* d_input, float* d_output_gradient, int batch_size) {
-    // Step 1: Compute weight and bias gradients (atomic-free)
+    
     dim3 weight_block(8, 8);
     dim3 weight_grid((layer->kernel_size + weight_block.x - 1) / weight_block.x,
                      layer->input_channels,
@@ -311,7 +311,7 @@ void conv_backward(ConvLayer* layer, float* d_input, float* d_output_gradient, i
         layer->stride, layer->padding);
     CUDA_CHECK(cudaGetLastError());
     
-    // Step 2: Compute input gradients (atomic-free)
+    
     dim3 input_block(8, 8);
     int grid_h = (layer->input_size + input_block.x - 1) / input_block.x;
     int grid_w = (layer->input_size + input_block.y - 1) / input_block.y;
@@ -326,51 +326,51 @@ void conv_backward(ConvLayer* layer, float* d_input, float* d_output_gradient, i
     CUDA_CHECK(cudaGetLastError());
 }
 
-// Complete backward pass
+
 void backward_pass(CNN* cnn, float* d_input, uint8_t* d_labels) {
     int batch_size = cnn->batch_size;
     
-    // Allocate temporary gradient buffer
+    
     float* d_fc2_grad;
     CUDA_CHECK(cudaMalloc(&d_fc2_grad, batch_size * FC2_OUTPUT_SIZE * sizeof(float)));
     
-    // Softmax + Cross-Entropy gradient
+    
     softmax_cross_entropy_backward(cnn->d_output, d_labels, d_fc2_grad, batch_size, FC2_OUTPUT_SIZE);
     
-    // FC2 backward
+    
     fc_backward(cnn->fc2, cnn->d_fc1_relu, d_fc2_grad, batch_size);
     
-    // ReLU backward (FC1)
+    
     relu_backward(cnn->fc1->d_output, cnn->fc2->d_input_gradients, cnn->d_fc1_relu_grad,
                   batch_size * FC1_OUTPUT_SIZE);
     
-    // FC1 backward
+    
     fc_backward(cnn->fc1, cnn->pool2->d_output, cnn->d_fc1_relu_grad, batch_size);
     
-    // Pool2 backward
+    
     maxpool_backward(cnn->pool2, cnn->fc1->d_input_gradients, batch_size);
     
-    // ReLU backward (Conv2)
+    
     relu_backward(cnn->conv2->d_output, cnn->pool2->d_input_gradients, cnn->d_conv2_relu_grad,
                   batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE);
     
-    // Conv2 backward
+    
     conv_backward(cnn->conv2, cnn->pool1->d_output, cnn->d_conv2_relu_grad, batch_size);
     
-    // Pool1 backward
+    
     maxpool_backward(cnn->pool1, cnn->conv2->d_input_gradients, batch_size);
     
-    // ReLU backward (Conv1)
+    
     relu_backward(cnn->conv1->d_output, cnn->pool1->d_input_gradients, cnn->d_conv1_relu_grad,
                   batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE);
     
-    // Conv1 backward
+    
     conv_backward(cnn->conv1, d_input, cnn->d_conv1_relu_grad, batch_size);
     
     CUDA_CHECK(cudaFree(d_fc2_grad));
 }
 
-// Update all weights
+
 void update_weights(CNN* cnn, float learning_rate) {
     update_encoder_weights(cnn, learning_rate);
     update_classifier_weights(cnn, learning_rate);
@@ -379,14 +379,14 @@ void update_weights(CNN* cnn, float learning_rate) {
 void update_classifier_weights(CNN* cnn, float learning_rate) {
     int threads = 256;
 
-    // Update FC1
+    
     int fc1_weight_size = FC1_OUTPUT_SIZE * FC1_INPUT_SIZE;
     update_weights_kernel<<<(fc1_weight_size + threads - 1) / threads, threads>>>(
         cnn->fc1->d_weights, cnn->fc1->d_weight_gradients, learning_rate, fc1_weight_size);
     update_weights_kernel<<<(FC1_OUTPUT_SIZE + threads - 1) / threads, threads>>>(
         cnn->fc1->d_bias, cnn->fc1->d_bias_gradients, learning_rate, FC1_OUTPUT_SIZE);
 
-    // Update FC2
+    
     int fc2_weight_size = FC2_OUTPUT_SIZE * FC2_INPUT_SIZE;
     update_weights_kernel<<<(fc2_weight_size + threads - 1) / threads, threads>>>(
         cnn->fc2->d_weights, cnn->fc2->d_weight_gradients, learning_rate, fc2_weight_size);
@@ -399,14 +399,14 @@ void update_classifier_weights(CNN* cnn, float learning_rate) {
 void update_encoder_weights(CNN* cnn, float learning_rate) {
     int threads = 256;
 
-    // Update Conv1
+    
     int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
     update_weights_kernel<<<(conv1_weight_size + threads - 1) / threads, threads>>>(
         cnn->conv1->d_weights, cnn->conv1->d_weight_gradients, learning_rate, conv1_weight_size);
     update_weights_kernel<<<(CONV1_FILTERS + threads - 1) / threads, threads>>>(
         cnn->conv1->d_bias, cnn->conv1->d_bias_gradients, learning_rate, CONV1_FILTERS);
 
-    // Update Conv2
+    
     int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
     update_weights_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
         cnn->conv2->d_weights, cnn->conv2->d_weight_gradients, learning_rate, conv2_weight_size);
@@ -417,8 +417,8 @@ void update_encoder_weights(CNN* cnn, float learning_rate) {
 }
 
 void backprop_reconstruction_to_encoder(CNN* cnn, float* d_input, float* d_pool2_gradient, int batch_size) {
-    // Backprop from pool2 output (same shape as pool2->d_output) into conv layers.
-    // We must accumulate conv weight/bias gradients on top of existing classification gradients.
+    
+    
 
     static float* d_conv2_w_tmp = NULL;
     static float* d_conv2_b_tmp = NULL;
@@ -435,21 +435,21 @@ void backprop_reconstruction_to_encoder(CNN* cnn, float* d_input, float* d_pool2
         CUDA_CHECK(cudaMalloc(&d_conv1_b_tmp, CONV1_FILTERS * sizeof(float)));
     }
 
-    // Pool2 backward
+    
     maxpool_backward(cnn->pool2, d_pool2_gradient, batch_size);
 
-    // ReLU backward (Conv2)
+    
     relu_backward(cnn->conv2->d_output, cnn->pool2->d_input_gradients, cnn->d_conv2_relu_grad,
                   batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE);
 
-    // Conv2 backward into temporary grad buffers
+    
     float* conv2_w_orig = cnn->conv2->d_weight_gradients;
     float* conv2_b_orig = cnn->conv2->d_bias_gradients;
     cnn->conv2->d_weight_gradients = d_conv2_w_tmp;
     cnn->conv2->d_bias_gradients = d_conv2_b_tmp;
     conv_backward(cnn->conv2, cnn->pool1->d_output, cnn->d_conv2_relu_grad, batch_size);
 
-    // Accumulate into original
+    
     int threads = 256;
     accumulate_gradients_kernel<<<(conv2_weight_size + threads - 1) / threads, threads>>>(
         conv2_w_orig, d_conv2_w_tmp, conv2_weight_size);
@@ -457,18 +457,18 @@ void backprop_reconstruction_to_encoder(CNN* cnn, float* d_input, float* d_pool2
         conv2_b_orig, d_conv2_b_tmp, CONV2_FILTERS);
     CUDA_CHECK(cudaGetLastError());
 
-    // Restore pointers
+    
     cnn->conv2->d_weight_gradients = conv2_w_orig;
     cnn->conv2->d_bias_gradients = conv2_b_orig;
 
-    // Pool1 backward
+    
     maxpool_backward(cnn->pool1, cnn->conv2->d_input_gradients, batch_size);
 
-    // ReLU backward (Conv1)
+    
     relu_backward(cnn->conv1->d_output, cnn->pool1->d_input_gradients, cnn->d_conv1_relu_grad,
                   batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE);
 
-    // Conv1 backward into temporary grad buffers
+    
     float* conv1_w_orig = cnn->conv1->d_weight_gradients;
     float* conv1_b_orig = cnn->conv1->d_bias_gradients;
     cnn->conv1->d_weight_gradients = d_conv1_w_tmp;

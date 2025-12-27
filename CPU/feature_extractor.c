@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Save encoder weights to binary file
+
 int save_encoder_weights(CNN* cnn, const char* filename) {
     FILE* file = fopen(filename, "wb");
     if (!file) {
@@ -15,7 +15,7 @@ int save_encoder_weights(CNN* cnn, const char* filename) {
     
     printf("Saving encoder weights to %s...\n", filename);
     
-    // Conv1 weights and bias
+    
     int conv1_weight_size = CONV1_FILTERS * INPUT_CHANNELS * CONV1_KERNEL_SIZE * CONV1_KERNEL_SIZE;
     fwrite(&conv1_weight_size, sizeof(int), 1, file);
     fwrite(cnn->conv1->weights, sizeof(float), conv1_weight_size, file);
@@ -23,7 +23,7 @@ int save_encoder_weights(CNN* cnn, const char* filename) {
     fwrite(&conv1_filters, sizeof(int), 1, file);
     fwrite(cnn->conv1->bias, sizeof(float), CONV1_FILTERS, file);
     
-    // Conv2 weights and bias
+    
     int conv2_weight_size = CONV2_FILTERS * CONV1_FILTERS * CONV2_KERNEL_SIZE * CONV2_KERNEL_SIZE;
     fwrite(&conv2_weight_size, sizeof(int), 1, file);
     fwrite(cnn->conv2->weights, sizeof(float), conv2_weight_size, file);
@@ -36,7 +36,7 @@ int save_encoder_weights(CNN* cnn, const char* filename) {
     return 0;
 }
 
-// Load encoder weights from binary file
+
 int load_encoder_weights(CNN* cnn, const char* filename) {
     FILE* file = fopen(filename, "rb");
     if (!file) {
@@ -46,7 +46,7 @@ int load_encoder_weights(CNN* cnn, const char* filename) {
     
     printf("Loading encoder weights from %s...\n", filename);
     
-    // Conv1 weights and bias
+    
     int conv1_weight_size;
     fread(&conv1_weight_size, sizeof(int), 1, file);
     fread(cnn->conv1->weights, sizeof(float), conv1_weight_size, file);
@@ -55,7 +55,7 @@ int load_encoder_weights(CNN* cnn, const char* filename) {
     fread(&conv1_filters, sizeof(int), 1, file);
     fread(cnn->conv1->bias, sizeof(float), conv1_filters, file);
     
-    // Conv2 weights and bias
+    
     int conv2_weight_size;
     fread(&conv2_weight_size, sizeof(int), 1, file);
     fread(cnn->conv2->weights, sizeof(float), conv2_weight_size, file);
@@ -69,60 +69,60 @@ int load_encoder_weights(CNN* cnn, const char* filename) {
     return 0;
 }
 
-// Run encoder forward pass only (Conv1->Pool1->Conv2->Pool2, no FC layers)
+
 void encoder_forward_pass(CNN* cnn, float* input, int batch_size) {
-    // Conv1 + ReLU
+    
     conv_forward(cnn->conv1, input, batch_size);
     relu_forward(cnn->conv1->output, cnn->conv1_relu,
                  batch_size * CONV1_FILTERS * CONV1_OUTPUT_SIZE * CONV1_OUTPUT_SIZE);
     
-    // Pool1
+    
     maxpool_forward(cnn->pool1, cnn->conv1_relu, batch_size);
     
-    // Conv2 + ReLU
+    
     conv_forward(cnn->conv2, cnn->pool1->output, batch_size);
     relu_forward(cnn->conv2->output, cnn->conv2_relu,
                  batch_size * CONV2_FILTERS * CONV2_OUTPUT_SIZE * CONV2_OUTPUT_SIZE);
     
-    // Pool2 (output is the feature representation)
+    
     maxpool_forward(cnn->pool2, cnn->conv2_relu, batch_size);
     
-    // Features are now in cnn->pool2->output with size: batch_size x FEATURE_SIZE
+    
 }
 
-// Extract features from entire dataset
+
 float* extract_features(CNN* cnn, CIFAR10_Dataset* dataset, int batch_size) {
     int num_samples = dataset->num_samples;
     int num_batches = (num_samples + batch_size - 1) / batch_size;
     
     printf("Extracting features from %d samples...\n", num_samples);
     
-    // Allocate host memory for all features
+    
     float* features = (float*)malloc(num_samples * FEATURE_SIZE * sizeof(float));
     if (!features) {
         fprintf(stderr, "Error: Failed to allocate memory for features\n");
         return NULL;
     }
     
-    // Process each batch
+    
     for (int batch_idx = 0; batch_idx < num_batches; batch_idx++) {
         int offset = batch_idx * batch_size;
         int current_batch_size = (offset + batch_size <= num_samples) ? batch_size : (num_samples - offset);
         
-        // Get batch images
+        
         float* batch_images = &dataset->images[offset * CIFAR10_IMAGE_SIZE];
         
-        // Run encoder forward pass
+        
         encoder_forward_pass(cnn, batch_images, current_batch_size);
         
-        // Copy features
+        
         for (int i = 0; i < current_batch_size; i++) {
             memcpy(&features[(offset + i) * FEATURE_SIZE],
                    &cnn->pool2->output[i * FEATURE_SIZE],
                    FEATURE_SIZE * sizeof(float));
         }
         
-        // Progress indicator
+        
         if ((batch_idx + 1) % 10 == 0 || batch_idx == num_batches - 1) {
             printf("  Processed %d/%d batches (%.1f%%)\r", 
                    batch_idx + 1, num_batches, 
@@ -137,7 +137,7 @@ float* extract_features(CNN* cnn, CIFAR10_Dataset* dataset, int batch_size) {
     return features;
 }
 
-// Save features to binary file
+
 int save_features(const char* filename, float* features, int num_samples, int feature_size) {
     FILE* file = fopen(filename, "wb");
     if (!file) {
@@ -156,7 +156,7 @@ int save_features(const char* filename, float* features, int num_samples, int fe
     return 0;
 }
 
-// Load features from binary file
+
 float* load_features(const char* filename, int* num_samples, int* feature_size) {
     FILE* file = fopen(filename, "rb");
     if (!file) {

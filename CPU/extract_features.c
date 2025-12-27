@@ -27,10 +27,10 @@ double get_time() {
 #endif
 }
 
-// Simple logistic regression classifier
+
 typedef struct {
-    float* weights;  // feature_size x num_classes
-    float* bias;     // num_classes
+    float* weights;  
+    float* bias;     
     int feature_size;
     int num_classes;
 } LogisticRegression;
@@ -43,7 +43,7 @@ LogisticRegression* create_classifier(int feature_size, int num_classes) {
     clf->weights = (float*)calloc(feature_size * num_classes, sizeof(float));
     clf->bias = (float*)calloc(num_classes, sizeof(float));
     
-    // Xavier initialization
+    
     float scale = sqrtf(2.0f / (feature_size + num_classes));
     for (int i = 0; i < feature_size * num_classes; i++) {
         clf->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * scale;
@@ -84,7 +84,7 @@ float predict_and_evaluate(LogisticRegression* clf, float* features, uint8_t* la
     float* probs = (float*)malloc(clf->num_classes * sizeof(float));
     
     for (int n = 0; n < num_samples; n++) {
-        // Compute logits
+        
         for (int c = 0; c < clf->num_classes; c++) {
             logits[c] = clf->bias[c];
             for (int f = 0; f < clf->feature_size; f++) {
@@ -93,10 +93,10 @@ float predict_and_evaluate(LogisticRegression* clf, float* features, uint8_t* la
             }
         }
         
-        // Softmax
+        
         softmax(logits, probs, clf->num_classes);
         
-        // Predict
+        
         int pred = 0;
         float max_prob = probs[0];
         for (int c = 1; c < clf->num_classes; c++) {
@@ -131,7 +131,7 @@ void train_classifier(LogisticRegression* clf, float* features, uint8_t* labels,
         float total_loss = 0.0f;
         
         for (int n = 0; n < num_samples; n++) {
-            // Forward pass
+            
             for (int c = 0; c < clf->num_classes; c++) {
                 logits[c] = clf->bias[c];
                 for (int f = 0; f < clf->feature_size; f++) {
@@ -142,16 +142,16 @@ void train_classifier(LogisticRegression* clf, float* features, uint8_t* labels,
             
             softmax(logits, probs, clf->num_classes);
             
-            // Compute loss
+            
             total_loss -= logf(probs[labels[n]] + 1e-7f);
             
-            // Compute gradients
+            
             for (int c = 0; c < clf->num_classes; c++) {
                 gradients[c] = probs[c];
                 if (c == labels[n]) gradients[c] -= 1.0f;
             }
             
-            // Update weights and bias
+            
             for (int c = 0; c < clf->num_classes; c++) {
                 clf->bias[c] -= learning_rate * gradients[c];
                 for (int f = 0; f < clf->feature_size; f++) {
@@ -190,17 +190,17 @@ void print_usage(const char* program_name) {
 }
 
 int main(int argc, char** argv) {
-    // Default parameters
+    
     const char* data_dir = "../cifar-10-batches-bin";
     const char* encoder_weights_file = "encoder_weights.bin";
     const char* train_features_file = "../extracted_features/train_features_cpu.bin";
     const char* test_features_file = "../extracted_features/test_features_cpu.bin";
-    int num_train_batches = 5;  // Default: use all 5 batches
+    int num_train_batches = 5;  
     int batch_size = 64;
     int num_epochs = 20;
     float learning_rate = 0.001f;
     
-    // Parse command line arguments
+    
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batches") == 0) {
             if (i + 1 < argc) {
@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
     
     srand(time(NULL));
     
-    // Check if we need to extract features or can load them
+    
     int extract_train = true;
     int extract_test = true;
     
@@ -298,7 +298,7 @@ int main(int argc, char** argv) {
     test_file = fopen(test_features_file, "rb");
     if (test_file) {
         fclose(test_file);
-        extract_test = extract_train;  // Extract both or neither
+        extract_test = extract_train;  
     }
     
     float* train_features = NULL;
@@ -306,9 +306,9 @@ int main(int argc, char** argv) {
     int train_num_samples = 0, train_feature_size = 0;
     int test_num_samples = 0, test_feature_size = 0;
     
-    // Load or extract features
+    
     if (extract_train || extract_test) {
-        // Load datasets
+        
         printf("Loading training data (%d batches)...\n", num_train_batches);
         CIFAR10_Dataset* train_data = load_training_data(data_dir, num_train_batches);
         if (!train_data) {
@@ -324,7 +324,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         
-        // Create CNN and load encoder weights
+        
         printf("\nCreating CNN model...\n");
         CNN* cnn = create_cnn(batch_size);
         if (!cnn) {
@@ -334,7 +334,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         
-        // Load trained encoder weights
+        
         if (load_encoder_weights(cnn, encoder_weights_file) != 0) {
             fprintf(stderr, "Warning: Could not load encoder weights. Using random initialization.\n");
             fprintf(stderr, "Please train the model first using main program.\n");
@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         
-        // Extract features
+        
         if (extract_train) {
             printf("\n=== Extracting Training Features ===\n");
             double start_time = get_time();
@@ -386,7 +386,7 @@ int main(int argc, char** argv) {
             test_feature_size = FEATURE_SIZE;
         }
         
-        // Save labels too
+        
         if (extract_train) {
             FILE* f = fopen("../extracted_features/train_labels_cpu.bin", "wb");
             if (f) {
@@ -414,7 +414,7 @@ int main(int argc, char** argv) {
         printf("\nFeature extraction complete!\n");
     }
     
-    // Load features if not extracted
+    
     if (!train_features) {
         train_features = load_features(train_features_file, &train_num_samples, &train_feature_size);
         if (!train_features) {
@@ -432,7 +432,7 @@ int main(int argc, char** argv) {
         }
     }
     
-    // Load labels
+    
     uint8_t* train_labels = NULL;
     uint8_t* test_labels = NULL;
     
@@ -467,7 +467,7 @@ int main(int argc, char** argv) {
     printf("Train features: (%d, %d)\n", train_num_samples, train_feature_size);
     printf("Test features: (%d, %d)\n\n", test_num_samples, test_feature_size);
     
-    // Create and train classifier
+    
     LogisticRegression* classifier = create_classifier(train_feature_size, FC2_OUTPUT_SIZE);
     double train_start = get_time();
     train_classifier(classifier, train_features, train_labels, 
@@ -475,7 +475,7 @@ int main(int argc, char** argv) {
     double train_time = get_time() - train_start;
     printf("\nTotal classifier training time: %.2f seconds\n", train_time);
     
-    // Evaluate
+    
     printf("\n=== Evaluation ===\n");
     float train_acc = predict_and_evaluate(classifier, train_features, train_labels, train_num_samples);
     printf("Training Accuracy: %.4f (%.2f%%)\n", train_acc, train_acc * 100);
@@ -483,7 +483,7 @@ int main(int argc, char** argv) {
     float test_acc = predict_and_evaluate(classifier, test_features, test_labels, test_num_samples);
     printf("Test Accuracy: %.4f (%.2f%%)\n", test_acc, test_acc * 100);
     
-    // Cleanup
+    
     free_classifier(classifier);
     free(train_features);
     free(test_features);

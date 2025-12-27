@@ -4,9 +4,9 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
 
-// ==================== DECODER FORWARD PASS ====================
 
-// Upsample forward kernel (nearest neighbor)
+
+
 __global__ void upsample_forward_kernel(float* input, float* output,
                                        int batch_size, int channels,
                                        int input_size, int output_size, int scale) {
@@ -35,7 +35,7 @@ __global__ void upsample_forward_kernel(float* input, float* output,
     }
 }
 
-// Transpose convolution forward kernel (shared-memory optimized input tile)
+
 __global__ void transpose_conv_forward_kernel(float* input, float* weights, float* bias, float* output,
                                              int batch_size, int input_channels, int output_channels,
                                              int input_size, int output_size, int kernel_size,
@@ -62,7 +62,7 @@ __global__ void transpose_conv_forward_kernel(float* input, float* weights, floa
     int tile_width = blockDim.y + kernel_size - 1;
 
     for (int ic = 0; ic < input_channels; ic++) {
-        // Load input tile into shared memory (same footprint as conv)
+        
         int load_h = (tile_height + blockDim.x - 1) / blockDim.x;
         int load_w = (tile_width + blockDim.y - 1) / blockDim.y;
 
@@ -89,8 +89,8 @@ __global__ void transpose_conv_forward_kernel(float* input, float* weights, floa
 
         __syncthreads();
 
-        // Compute transpose conv using shared memory
-        // For stride=1, this matches GPU_naive mapping: ih = oh + padding - kh
+        
+        
         for (int kh = 0; kh < kernel_size; kh++) {
             for (int kw = 0; kw < kernel_size; kw++) {
                 int sh = threadIdx.x + 2 * padding - kh;
@@ -113,7 +113,7 @@ __global__ void transpose_conv_forward_kernel(float* input, float* weights, floa
     output[output_idx] = sum;
 }
 
-// Host wrapper for upsample forward
+
 void upsample_forward(UpsampleLayer* layer, float* d_input, int batch_size) {
     dim3 blockDim(8, 8);
     int grid_h = (layer->output_size + blockDim.x - 1) / blockDim.x;
@@ -127,7 +127,7 @@ void upsample_forward(UpsampleLayer* layer, float* d_input, int batch_size) {
     CUDA_CHECK(cudaGetLastError());
 }
 
-// Host wrapper for transpose conv forward
+
 void transpose_conv_forward(TransposeConvLayer* layer, float* d_input, int batch_size) {
     dim3 blockDim(8, 8);
     int grid_h = (layer->output_size + blockDim.x - 1) / blockDim.x;
@@ -146,20 +146,20 @@ void transpose_conv_forward(TransposeConvLayer* layer, float* d_input, int batch
     CUDA_CHECK(cudaGetLastError());
 }
 
-// Decoder forward pass
+
 void decoder_forward(Decoder* decoder, float* d_input, int batch_size) {
-    // Upsample1: 8×8 → 16×16
+    
     upsample_forward(decoder->upsample1, d_input, batch_size);
 
-    // TransConv1 + ReLU: 128ch → 64ch
+    
     transpose_conv_forward(decoder->tconv1, decoder->upsample1->d_output, batch_size);
     relu_forward(decoder->tconv1->d_output, decoder->d_tconv1_relu,
                  batch_size * 64 * 16 * 16);
 
-    // Upsample2: 16×16 → 32×32
+    
     upsample_forward(decoder->upsample2, decoder->d_tconv1_relu, batch_size);
 
-    // TransConv2: 64ch → 3ch
+    
     transpose_conv_forward(decoder->tconv2, decoder->upsample2->d_output, batch_size);
 
     CUDA_CHECK(cudaMemcpy(decoder->d_reconstructed, decoder->tconv2->d_output,
@@ -167,7 +167,7 @@ void decoder_forward(Decoder* decoder, float* d_input, int batch_size) {
                           cudaMemcpyDeviceToDevice));
 }
 
-// ==================== DECODER BACKWARD PASS ====================
+
 
 __global__ void transpose_conv_backward_kernel(float* input, float* weights, float* output_gradient,
                                               float* weight_gradients, float* bias_gradients, float* input_gradients,
@@ -211,7 +211,7 @@ __global__ void transpose_conv_backward_kernel(float* input, float* weights, flo
             }
         }
 
-        // Bias gradient (once per output channel per batch element)
+        
         if (ic == 0 && ih == 0 && iw == 0) {
             for (int oh = 0; oh < output_size; oh++) {
                 for (int ow = 0; ow < output_size; ow++) {
@@ -301,27 +301,27 @@ void upsample_backward(UpsampleLayer* layer, float* d_output_gradient, int batch
 void decoder_backward(Decoder* decoder, float* d_output_gradient, float* d_input, int batch_size) {
     (void)d_input;
 
-    // Backward through TransConv2
+    
     transpose_conv_backward(decoder->tconv2, decoder->upsample2->d_output, d_output_gradient, batch_size);
 
-    // Backward through Upsample2
+    
     upsample_backward(decoder->upsample2, decoder->tconv2->d_input_gradients, batch_size);
 
-    // Backward through ReLU after TransConv1
+    
     relu_backward(decoder->tconv1->d_output, decoder->upsample2->d_input_gradients,
                   decoder->d_tconv1_relu_grad, batch_size * 64 * 16 * 16);
 
-    // Backward through TransConv1
+    
     transpose_conv_backward(decoder->tconv1, decoder->upsample1->d_output, decoder->d_tconv1_relu_grad, batch_size);
 
-    // Backward through Upsample1 (this is the gradient wrt pool2 output)
+    
     upsample_backward(decoder->upsample1, decoder->tconv1->d_input_gradients, batch_size);
 }
 
 void update_decoder_weights(Decoder* decoder, float learning_rate) {
     int threads = 256;
 
-    // Update TransConv1 weights and bias
+    
     int tconv1_weight_size = decoder->tconv1->output_channels * decoder->tconv1->input_channels *
                              decoder->tconv1->kernel_size * decoder->tconv1->kernel_size;
     update_weights_kernel<<<(tconv1_weight_size + threads - 1) / threads, threads>>>(
@@ -329,7 +329,7 @@ void update_decoder_weights(Decoder* decoder, float learning_rate) {
     update_weights_kernel<<<(decoder->tconv1->output_channels + threads - 1) / threads, threads>>>(
         decoder->tconv1->d_bias, decoder->tconv1->d_bias_gradients, learning_rate, decoder->tconv1->output_channels);
 
-    // Update TransConv2 weights and bias
+    
     int tconv2_weight_size = decoder->tconv2->output_channels * decoder->tconv2->input_channels *
                              decoder->tconv2->kernel_size * decoder->tconv2->kernel_size;
     update_weights_kernel<<<(tconv2_weight_size + threads - 1) / threads, threads>>>(

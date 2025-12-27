@@ -5,10 +5,10 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 
-// Decoder implementation for GPU_v3_optimized_gradient.
-// Matches Decoder/UpsampleLayer/TransposeConvLayer structs in cnn.cuh.
 
-// ------------------------ Upsample ------------------------
+
+
+
 
 __global__ void upsample_forward_kernel(float* input, float* output,
                                        int batch_size, int channels,
@@ -73,7 +73,7 @@ void upsample_backward(UpsampleLayer* layer, float* d_output_gradient, int batch
     CUDA_CHECK(cudaGetLastError());
 }
 
-// ------------------ Transpose Convolution -----------------
+
 
 #ifndef TC_TILE
 #define TC_TILE 8
@@ -105,13 +105,13 @@ __global__ void transpose_conv_forward_kernel(float* input, float* weights, floa
         sum = bias[oc];
     }
 
-    // Shared tile of input (one input channel at a time)
+    
     extern __shared__ float shared_input[];
     int tile_h_in = TC_TILE + kernel_size - 1;
     int tile_w_in = TC_TILE + kernel_size - 1;
 
     for (int ic = 0; ic < input_channels; ic++) {
-        // Load input patch starting at (oh0 - padding, ow0 - padding)
+        
         for (int sh = th; sh < tile_h_in; sh += TC_TILE) {
             for (int sw = tw; sw < tile_w_in; sw += TC_TILE) {
                 int ih = oh0 - padding + sh;
@@ -128,8 +128,8 @@ __global__ void transpose_conv_forward_kernel(float* input, float* weights, floa
         if (oh < output_size && ow < output_size) {
             for (int kh = 0; kh < kernel_size; kh++) {
                 for (int kw = 0; kw < kernel_size; kw++) {
-                    // Transpose-conv forward uses input at (oh + padding - kh, ow + padding - kw)
-                    // With kernel=3, padding=1: relative index is (th + 2 - kh, tw + 2 - kw)
+                    
+                    
                     int sh = th + (2 * padding) - kh;
                     int sw = tw + (2 * padding) - kw;
                     if (sh >= 0 && sh < tile_h_in && sw >= 0 && sw < tile_w_in) {
@@ -174,8 +174,8 @@ __global__ void transpose_conv_backward_kernel(float* input, float* weights, flo
                                               int batch_size, int input_channels, int output_channels,
                                               int input_size, int output_size, int kernel_size,
                                               int stride, int padding) {
-    // NOTE: Kept only for API compatibility; atomic-heavy implementation removed.
-    // The optimized path is implemented in transpose_conv_backward() below.
+    
+    
     (void)input; (void)weights; (void)output_gradient;
     (void)weight_gradients; (void)bias_gradients; (void)input_gradients;
     (void)batch_size; (void)input_channels; (void)output_channels;
@@ -183,8 +183,8 @@ __global__ void transpose_conv_backward_kernel(float* input, float* weights, flo
     (void)stride; (void)padding;
 }
 
-// Atomic-free weight/bias gradients for the decoder's transpose-conv (stride assumed 1, consistent with forward).
-// One thread computes one (oc, ic, kh, kw) weight element and accumulates over batch/spatial.
+
+
 __global__ void transpose_conv_weight_bias_grad_kernel(const float* __restrict__ input,
                                                       const float* __restrict__ output_gradient,
                                                       float* __restrict__ weight_gradients,
@@ -209,7 +209,7 @@ __global__ void transpose_conv_weight_bias_grad_kernel(const float* __restrict__
     for (int b = 0; b < batch_size; b++) {
         for (int oh = 0; oh < output_size; oh++) {
             for (int ow = 0; ow < output_size; ow++) {
-                // Forward uses input[ih = oh + padding - kh, iw = ow + padding - kw]
+                
                 int ih = oh + padding - kh;
                 int iw = ow + padding - kw;
                 if (ih >= 0 && ih < input_size && iw >= 0 && iw < input_size) {
@@ -232,8 +232,8 @@ __global__ void transpose_conv_weight_bias_grad_kernel(const float* __restrict__
     }
 }
 
-// Atomic-free input gradients for the decoder's transpose-conv (stride assumed 1, consistent with forward).
-// One thread computes one input element (b, ic, ih, iw) and accumulates over (oc, kh, kw).
+
+
 __global__ void transpose_conv_input_grad_kernel(const float* __restrict__ weights,
                                                 const float* __restrict__ output_gradient,
                                                 float* __restrict__ input_gradients,
@@ -255,7 +255,7 @@ __global__ void transpose_conv_input_grad_kernel(const float* __restrict__ weigh
     for (int oc = 0; oc < output_channels; oc++) {
         for (int kh = 0; kh < kernel_size; kh++) {
             for (int kw = 0; kw < kernel_size; kw++) {
-                // From forward mapping ih = oh + padding - kh  =>  oh = ih - padding + kh
+                
                 int oh = ih - padding + kh;
                 int ow = iw - padding + kw;
                 if (oh >= 0 && oh < output_size && ow >= 0 && ow < output_size) {
@@ -274,7 +274,7 @@ __global__ void transpose_conv_input_grad_kernel(const float* __restrict__ weigh
 }
 
 void transpose_conv_backward(TransposeConvLayer* layer, float* d_input, float* d_output_gradient, int batch_size) {
-    // 1) weight + bias gradients (atomic-free, overwrite buffers)
+    
     dim3 wg_block(16, 16);
     dim3 wg_grid((layer->kernel_size + wg_block.x - 1) / wg_block.x,
                  layer->input_channels,
@@ -287,7 +287,7 @@ void transpose_conv_backward(TransposeConvLayer* layer, float* d_input, float* d
         layer->kernel_size, layer->padding);
     CUDA_CHECK(cudaGetLastError());
 
-    // 2) input gradients (atomic-free, overwrite buffer)
+    
     dim3 ig_block(16, 16);
     int grid_h = (layer->input_size + ig_block.x - 1) / ig_block.x;
     int grid_w = (layer->input_size + ig_block.y - 1) / ig_block.y;
@@ -301,10 +301,10 @@ void transpose_conv_backward(TransposeConvLayer* layer, float* d_input, float* d
     CUDA_CHECK(cudaGetLastError());
 }
 
-// ------------------------ Decoder -------------------------
+
 
 void decoder_forward(Decoder* decoder, float* d_input, int batch_size) {
-    // Input: pool2 output (batch, 128, 8, 8)
+    
     upsample_forward(decoder->upsample1, d_input, batch_size);
     transpose_conv_forward(decoder->tconv1, decoder->upsample1->d_output, batch_size);
 
@@ -314,15 +314,15 @@ void decoder_forward(Decoder* decoder, float* d_input, int batch_size) {
     upsample_forward(decoder->upsample2, decoder->d_tconv1_relu, batch_size);
     transpose_conv_forward(decoder->tconv2, decoder->upsample2->d_output, batch_size);
 
-    // Keep a stable pointer for downstream code
+    
     CUDA_CHECK(cudaMemcpy(decoder->d_reconstructed, decoder->tconv2->d_output,
                           batch_size * 3 * 32 * 32 * sizeof(float),
                           cudaMemcpyDeviceToDevice));
 }
 
 void decoder_backward(Decoder* decoder, float* d_output_gradient, float* d_input, int batch_size) {
-    // d_output_gradient: gradient wrt reconstructed image (batch, 3, 32, 32)
-    // d_input: output buffer for gradient wrt pool2 output (batch, 128, 8, 8)
+    
+    
 
     transpose_conv_backward(decoder->tconv2, decoder->upsample2->d_output, d_output_gradient, batch_size);
     upsample_backward(decoder->upsample2, decoder->tconv2->d_input_gradients, batch_size);
